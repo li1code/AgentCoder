@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Autocoder AI - Landing Dashboard</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;family=JetBrains+Mono:wght@400;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "surface-container-low": "#131b2e",
+                        "surface": "#0b1326",
+                        "on-tertiary-fixed": "#2a1700",
+                        "code-bg": "#020617",
+                        "on-secondary-fixed-variant": "#005236",
+                        "on-tertiary-container": "#3e2400",
+                        "slate-800": "#1E293B",
+                        "on-background": "#dae2fd",
+                        "on-primary-fixed": "#07006c",
+                        "on-secondary-fixed": "#002113",
+                        "surface-container-highest": "#2d3449",
+                        "tertiary-fixed-dim": "#ffb95f",
+                        "primary": "#c0c1ff",
+                        "surface-container": "#171f33",
+                        "surface-variant": "#2d3449",
+                        "on-surface-variant": "#c7c4d7",
+                        "surface-container-lowest": "#060e20",
+                        "slate-900": "#0F172A",
+                        "slate-950": "#020617",
+                        "tertiary-container": "#ca8100",
+                        "surface-bright": "#31394d",
+                        "on-secondary": "#003824",
+                        "secondary-fixed": "#6ffbbe",
+                        "secondary": "#4edea3",
+                        "primary-container": "#8083ff",
+                        "electric-indigo": "#818cf8",
+                        "secondary-container": "#00a572",
+                        "on-primary-container": "#0d0096",
+                        "surface-container-high": "#222a3d",
+                        "primary-fixed-dim": "#c0c1ff",
+                        "inverse-primary": "#494bd6",
+                        "slate-400": "#94A3B8",
+                        "emerald-ship": "#10B981",
+                        "surface-dim": "#0b1326",
+                        "inverse-on-surface": "#283044",
+                        "inverse-surface": "#dae2fd",
+                        "background": "#0b1326",
+                        "on-surface": "#f8fafc",
+                        "error": "#ffb4ab",
+                        "surface-tint": "#c0c1ff",
+                        "on-error-container": "#ffdad6",
+                        "outline-variant": "#464554",
+                        "secondary-fixed-dim": "#4edea3",
+                        "outline": "#908fa0",
+                        "error-container": "#93000a",
+                        "on-secondary-container": "#00311f",
+                        "tertiary-fixed": "#ffddb8",
+                        "slate-700": "#334155",
+                        "on-tertiary": "#472a00",
+                        "on-error": "#690005",
+                        "on-tertiary-fixed-variant": "#653e00",
+                        "on-primary-fixed-variant": "#2f2ebe",
+                        "on-primary": "#1000a9",
+                        "amber-warning": "#F59E0B",
+                        "primary-fixed": "#e1e0ff",
+                        "tertiary": "#ffb95f"
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    spacing: {
+                        "unit": "4px",
+                        "container-padding": "1.5rem",
+                        "gutter": "1rem",
+                        "panel-gap": "2px",
+                        "sidebar-width": "280px"
+                    },
+                    fontFamily: {
+                        "headline-lg": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "body-sm": ["Inter"],
+                        "code-lg": ["JetBrains Mono"],
+                        "body-md": ["Inter"],
+                        "code-sm": ["JetBrains Mono"],
+                        "label-caps": ["JetBrains Mono"]
+                    },
+                    fontSize: {
+                        "headline-lg": ["32px", { lineHeight: "40px", letterSpacing: "-0.02em", fontWeight: "700" }],
+                        "headline-md": ["24px", { lineHeight: "32px", fontWeight: "600" }],
+                        "body-sm": ["12px", { lineHeight: "16px", fontWeight: "400" }],
+                        "code-lg": ["14px", { lineHeight: "24px", fontWeight: "400" }],
+                        "body-md": ["14px", { lineHeight: "20px", fontWeight: "400" }],
+                        "code-sm": ["12px", { lineHeight: "18px", fontWeight: "400" }],
+                        "label-caps": ["10px", { lineHeight: "12px", letterSpacing: "0.1em", fontWeight: "700" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .material-symbols-outlined.fill {
+            font-variation-settings: 'FILL' 1;
+        }
+        /* Custom scrollbar for high-density environments */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #020617; /* slate-950 */
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #334155; /* slate-700 */
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #475569;
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-on-surface font-body-md h-screen overflow-hidden flex flex-col antialiased">
+<!-- TopAppBar -->
+<header class="bg-slate-950 border-b border-slate-700 flex justify-between items-center w-full px-container-padding h-14 z-50 flex-shrink-0">
+<div class="flex items-center gap-6">
+<span class="text-headline-md font-headline-md text-on-surface">Autocoder AI</span>
+<nav class="hidden md:flex items-center gap-4 text-label-caps font-label-caps">
+<a class="text-slate-400 font-body-md hover:text-electric-indigo hover:bg-slate-900 transition-colors px-2 py-1 rounded" href="#">RuFlo Pipeline</a>
+<a class="text-slate-400 font-body-md hover:text-electric-indigo hover:bg-slate-900 transition-colors px-2 py-1 rounded" href="#">v2.4.0-stable</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<div class="flex gap-2">
+<button class="text-slate-400 hover:text-electric-indigo hover:bg-slate-900 p-2 rounded-full transition-colors">
+<span class="material-symbols-outlined" data-icon="monitor_heart">monitor_heart</span>
+</button>
+<button class="text-slate-400 hover:text-electric-indigo hover:bg-slate-900 p-2 rounded-full transition-colors">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+</button>
+<button class="text-slate-400 hover:text-electric-indigo hover:bg-slate-900 p-2 rounded-full transition-colors">
+<span class="material-symbols-outlined" data-icon="account_circle">account_circle</span>
+</button>
+</div>
+<div class="flex gap-2">
+<button class="border border-slate-700 text-on-surface px-4 py-1.5 rounded-DEFAULT text-label-caps font-label-caps hover:bg-slate-900 transition-colors">Halt Pipeline</button>
+<button class="bg-emerald-ship text-white px-4 py-1.5 rounded-DEFAULT text-label-caps font-label-caps font-bold shadow-[0_0_8px_rgba(16,185,129,0.3)] hover:bg-emerald-ship/90 transition-colors">Approve &amp; Generate</button>
+</div>
+</div>
+</header>
+<div class="flex flex-1 overflow-hidden">
+<!-- SideNavBar -->
+<aside class="bg-slate-900 border-r border-slate-700 w-sidebar-width flex-shrink-0 flex flex-col z-40 h-full hidden md:flex">
+<!-- Header section mapping to 'Project Alpha' etc, omitted for brevity, focusing on nav -->
+<div class="p-4 border-b border-slate-700 flex flex-col gap-2">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-emerald-ship/20 border border-emerald-ship flex items-center justify-center text-emerald-ship">
+<span class="material-symbols-outlined text-[16px] fill" data-icon="check_circle">check_circle</span>
+</div>
+<div>
+<div class="text-body-md font-bold text-on-surface">Project Alpha</div>
+<div class="text-body-sm font-body-sm text-emerald-ship">Pipeline Active</div>
+</div>
+</div>
+<button class="w-full mt-2 bg-electric-indigo text-white py-2 rounded-DEFAULT text-label-caps font-label-caps font-bold hover:bg-electric-indigo/90 transition-colors flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-[16px]" data-icon="add">add</span> New Agent
+                </button>
+</div>
+<nav class="flex-1 py-4 flex flex-col gap-1 px-2">
+<!-- Dashboard Active -->
+<a class="text-on-surface bg-slate-800 border-r-2 border-electric-indigo flex items-center gap-3 p-3 text-label-caps font-label-caps shadow-[0_0_8px_rgba(129,140,248,0.4)] transition-all" href="#">
+<span class="material-symbols-outlined text-[18px]" data-icon="dashboard">dashboard</span> Dashboard
+                </a>
+<a class="text-slate-400 flex items-center gap-3 p-3 text-label-caps font-label-caps hover:bg-slate-800/50 hover:text-on-surface transition-colors rounded" href="#">
+<span class="material-symbols-outlined text-[18px]" data-icon="terminal">terminal</span> Workspace
+                </a>
+<a class="text-slate-400 flex items-center gap-3 p-3 text-label-caps font-label-caps hover:bg-slate-800/50 hover:text-on-surface transition-colors rounded" href="#">
+<span class="material-symbols-outlined text-[18px]" data-icon="analytics">analytics</span> Telemetry
+                </a>
+<a class="text-slate-400 flex items-center gap-3 p-3 text-label-caps font-label-caps hover:bg-slate-800/50 hover:text-on-surface transition-colors rounded" href="#">
+<span class="material-symbols-outlined text-[18px]" data-icon="pulse">pause</span> Health
+                </a>
+<a class="text-slate-400 flex items-center gap-3 p-3 text-label-caps font-label-caps hover:bg-slate-800/50 hover:text-on-surface transition-colors rounded" href="#">
+<span class="material-symbols-outlined text-[18px]" data-icon="settings">settings</span> Settings
+                </a>
+</nav>
+<div class="border-t border-slate-700 p-2 flex flex-col gap-1">
+<a class="text-slate-400 flex items-center gap-3 p-3 text-label-caps font-label-caps hover:bg-slate-800/50 hover:text-on-surface transition-colors rounded" href="#">
+<span class="material-symbols-outlined text-[18px]" data-icon="menu_book">menu_book</span> Documentation
+                </a>
+<a class="text-slate-400 flex items-center gap-3 p-3 text-label-caps font-label-caps hover:bg-slate-800/50 hover:text-on-surface transition-colors rounded" href="#">
+<span class="material-symbols-outlined text-[18px]" data-icon="help">help</span> Support
+                </a>
+</div>
+</aside>
+<!-- Main Content Area -->
+<main class="flex-1 overflow-y-auto bg-slate-950 p-container-padding flex flex-col gap-6">
+<!-- Hero / Start New Project -->
+<section class="bg-slate-900 border border-slate-700 rounded-lg p-6 relative overflow-hidden flex flex-col gap-4">
+<div class="absolute top-0 right-0 w-64 h-64 bg-electric-indigo/10 blur-[100px] pointer-events-none"></div>
+<h1 class="text-headline-lg font-headline-lg text-on-surface z-10">Start New Project</h1>
+<div class="relative z-10">
+<div class="flex flex-col bg-slate-950 border border-slate-700 rounded-DEFAULT focus-within:border-electric-indigo focus-within:ring-1 focus-within:ring-electric-indigo/50 transition-all p-2">
+<textarea class="bg-transparent border-none text-on-surface font-body-md placeholder-slate-400 focus:ring-0 resize-none h-24 p-2" placeholder="Describe the application you want to build. E.g., 'A full-stack CRM dashboard with React, Tailwind, and Supabase...'"></textarea>
+<div class="flex justify-between items-center p-2 border-t border-slate-800/50 mt-2">
+<div class="flex gap-2">
+<button class="text-slate-400 hover:text-on-surface transition-colors" title="Attach Architecture Diagram">
+<span class="material-symbols-outlined text-[20px]" data-icon="attach_file">attach_file</span>
+</button>
+<button class="text-slate-400 hover:text-on-surface transition-colors" title="Connect Database Schema">
+<span class="material-symbols-outlined text-[20px]" data-icon="database">database</span>
+</button>
+</div>
+<button class="bg-electric-indigo text-white px-6 py-2 rounded-DEFAULT text-label-caps font-label-caps font-bold hover:bg-electric-indigo/90 transition-colors shadow-[0_0_12px_rgba(129,140,248,0.5)] flex items-center gap-2">
+                                Initialize Pipeline <span class="material-symbols-outlined text-[16px]" data-icon="arrow_forward">arrow_forward</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Quick-Start Blueprints -->
+<div class="mt-4 z-10">
+<h2 class="text-label-caps font-label-caps text-slate-400 mb-3">QUICK-START BLUEPRINTS</h2>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+<div class="bg-slate-900 border border-slate-700 hover:border-electric-indigo/50 p-4 rounded-DEFAULT cursor-pointer group transition-all relative overflow-hidden">
+<div class="absolute top-0 right-0 w-24 h-24 bg-electric-indigo/5 blur-[30px] group-hover:bg-electric-indigo/10 transition-all pointer-events-none"></div>
+<div class="flex items-center gap-3 mb-2">
+<span class="material-symbols-outlined text-electric-indigo" data-icon="storefront">storefront</span>
+<h3 class="text-body-md font-bold">E-Commerce Core</h3>
+</div>
+<p class="text-body-sm font-body-sm text-slate-400 mb-3 line-clamp-2">Next.js storefront, Stripe checkout, payload CMS, Postgres.</p>
+<div class="flex gap-1 flex-wrap">
+<span class="px-2 py-0.5 bg-slate-950 border border-slate-700 text-slate-300 text-label-caps font-label-caps rounded">Next.js</span>
+<span class="px-2 py-0.5 bg-slate-950 border border-slate-700 text-slate-300 text-label-caps font-label-caps rounded">Stripe</span>
+</div>
+</div>
+<div class="bg-slate-900 border border-slate-700 hover:border-electric-indigo/50 p-4 rounded-DEFAULT cursor-pointer group transition-all relative overflow-hidden">
+<div class="absolute top-0 right-0 w-24 h-24 bg-electric-indigo/5 blur-[30px] group-hover:bg-electric-indigo/10 transition-all pointer-events-none"></div>
+<div class="flex items-center gap-3 mb-2">
+<span class="material-symbols-outlined text-emerald-ship" data-icon="view_kanban">view_kanban</span>
+<h3 class="text-body-md font-bold">Kanban Workspace</h3>
+</div>
+<p class="text-body-sm font-body-sm text-slate-400 mb-3 line-clamp-2">React DnD, Socket.io real-time updates, Redis caching.</p>
+<div class="flex gap-1 flex-wrap">
+<span class="px-2 py-0.5 bg-slate-950 border border-slate-700 text-slate-300 text-label-caps font-label-caps rounded">React</span>
+<span class="px-2 py-0.5 bg-slate-950 border border-slate-700 text-slate-300 text-label-caps font-label-caps rounded">Redis</span>
+</div>
+</div>
+<div class="bg-slate-900 border border-slate-700 hover:border-electric-indigo/50 p-4 rounded-DEFAULT cursor-pointer group transition-all relative overflow-hidden">
+<div class="absolute top-0 right-0 w-24 h-24 bg-electric-indigo/5 blur-[30px] group-hover:bg-electric-indigo/10 transition-all pointer-events-none"></div>
+<div class="flex items-center gap-3 mb-2">
+<span class="material-symbols-outlined text-secondary" data-icon="monitor_weight">monitor_weight</span>
+<h3 class="text-body-md font-bold">Fitness Tracker</h3>
+</div>
+<p class="text-body-sm font-body-sm text-slate-400 mb-3 line-clamp-2">Mobile-first PWA, Chart.js analytics, SQLite local-first.</p>
+<div class="flex gap-1 flex-wrap">
+<span class="px-2 py-0.5 bg-slate-950 border border-slate-700 text-slate-300 text-label-caps font-label-caps rounded">PWA</span>
+<span class="px-2 py-0.5 bg-slate-950 border border-slate-700 text-slate-300 text-label-caps font-label-caps rounded">SQLite</span>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Recent Projects Grid -->
+<section class="flex flex-col gap-4">
+<div class="flex justify-between items-center border-b border-slate-700 pb-2">
+<h2 class="text-headline-md font-headline-md text-on-surface">Active Pipelines &amp; History</h2>
+<button class="text-slate-400 hover:text-on-surface text-body-sm font-body-sm flex items-center gap-1 transition-colors">
+                        View All <span class="material-symbols-outlined text-[16px]" data-icon="chevron_right">chevron_right</span>
+</button>
+</div>
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+<!-- Project Card: Active Hardening -->
+<div class="bg-slate-900 border border-slate-700 p-4 rounded-DEFAULT flex flex-col gap-3 relative">
+<div class="absolute top-0 left-0 w-1 h-full bg-electric-indigo rounded-l-DEFAULT shadow-[0_0_8px_rgba(129,140,248,0.6)]"></div>
+<div class="flex justify-between items-start pl-2">
+<div>
+<h3 class="text-body-md font-bold text-on-surface mb-1">Financial Data Aggregator</h3>
+<div class="text-code-sm font-code-sm text-slate-400 flex items-center gap-2">
+<span class="material-symbols-outlined text-[14px]" data-icon="schedule">schedule</span> Last updated 2m ago
+                                </div>
+</div>
+<span class="px-2 py-1 bg-electric-indigo/10 border border-electric-indigo/30 text-electric-indigo text-label-caps font-label-caps rounded flex items-center gap-1">
+<span class="w-1.5 h-1.5 bg-electric-indigo rounded-full animate-pulse"></span> Pass 2: Hardening
+                            </span>
+</div>
+<div class="bg-code-bg border border-slate-700 rounded p-2 text-code-sm font-code-sm text-slate-400 max-h-24 overflow-y-auto">
+<div class="text-emerald-ship">[✓] Agent-DB: Schema migrated successfully.</div>
+<div class="text-emerald-ship">[✓] Agent-API: Endpoints scaffolded.</div>
+<div class="text-slate-300">[~] Agent-SEC: Applying JWT middleware...</div>
+<div class="text-slate-500 animate-pulse">&gt; Waiting for security scan results...</div>
+</div>
+</div>
+<!-- Project Card: Success -->
+<div class="bg-slate-900 border border-slate-700 p-4 rounded-DEFAULT flex flex-col gap-3">
+<div class="flex justify-between items-start">
+<div>
+<h3 class="text-body-md font-bold text-on-surface mb-1">Internal HR Portal</h3>
+<div class="text-code-sm font-code-sm text-slate-400 flex items-center gap-2">
+<span class="material-symbols-outlined text-[14px]" data-icon="schedule">schedule</span> Deployed 2d ago
+                                </div>
+</div>
+<span class="px-2 py-1 bg-emerald-ship/10 border border-emerald-ship/30 text-emerald-ship text-label-caps font-label-caps rounded flex items-center gap-1">
+<span class="material-symbols-outlined text-[12px]" data-icon="check_circle">check_circle</span> Success
+                            </span>
+</div>
+<div class="flex items-center gap-4 mt-auto pt-2 border-t border-slate-800">
+<button class="text-slate-400 hover:text-on-surface text-body-sm font-body-sm transition-colors">View Logs</button>
+<button class="text-electric-indigo hover:text-electric-indigo/80 text-body-sm font-body-sm transition-colors font-bold">Open Repository</button>
+</div>
+</div>
+<!-- Project Card: Needs Clarification -->
+<div class="bg-slate-900 border border-slate-700 p-4 rounded-DEFAULT flex flex-col gap-3">
+<div class="flex justify-between items-start">
+<div>
+<h3 class="text-body-md font-bold text-on-surface mb-1">IoT Device Fleet Manager</h3>
+<div class="text-code-sm font-code-sm text-slate-400 flex items-center gap-2">
+<span class="material-symbols-outlined text-[14px]" data-icon="schedule">schedule</span> Paused 1h ago
+                                </div>
+</div>
+<span class="px-2 py-1 bg-amber-warning/10 border border-amber-warning/30 text-amber-warning text-label-caps font-label-caps rounded flex items-center gap-1">
+<span class="material-symbols-outlined text-[12px]" data-icon="warning">warning</span> Needs Clarification
+                            </span>
+</div>
+<div class="bg-slate-800/50 p-2 rounded text-body-sm font-body-sm border border-amber-warning/20">
+<span class="text-amber-warning font-bold">Agent-Arch:</span> "Unclear protocol for device handshake. MQTT or WebSocket preferred? Please specify to continue data layer generation."
+                        </div>
+<div class="flex items-center gap-4 mt-auto pt-2">
+<button class="bg-slate-950 border border-slate-700 text-on-surface px-3 py-1 rounded text-body-sm font-body-sm hover:border-amber-warning transition-colors">Provide Input</button>
+</div>
+</div>
+</div>
+</section>
+</main>
+</div>
+</body></html>

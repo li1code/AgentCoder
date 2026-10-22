@@ -1,0 +1,31 @@
+{
+  "dependencies": {
+    "Planner": {
+      "inputs": ["Queen.projectName", "Queen.problemStatement", "Queen.projectDescription", "Queen.projectGoal", "Queen.mvpScope", "Queen.constraints", "Queen.risks"]
+    },
+    "Architect": {
+      "inputs": ["Planner.features", "Planner.functionalRequirements", "Planner.nonFunctionalRequirements", "Planner.recommendedTechStack", "Queen.constraints"]
+    },
+    "System": {
+      "inputs": ["Planner.features", "Planner.functionalRequirements", "Planner.nonFunctionalRequirements", "Planner.recommendedTechStack", "Architect.modules", "Queen.constraints"]
+    },
+    "Designer": {
+      "inputs": ["Planner.features", "Planner.functionalRequirements", "Planner.recommendedTechStack", "Architect.modules", "Architect.projectStructure", "System.database"]
+    },
+    "Blueprinter": {
+      "inputs": ["Planner.features", "Planner.functionalRequirements", "Planner.recommendedTechStack", "Architect.modules", "Architect.projectStructure", "System.database", "System.apis", "Designer.pages", "Designer.components", "Designer.designSystem", "Designer.navigation"]
+    },
+    "Tester": {
+      "inputs": ["Queen.projectGoal", "Queen.constraints", "Planner.features", "Planner.functionalRequirements", "Planner.nonFunctionalRequirements", "Planner.recommendedTechStack", "Architect.modules", "System.database", "System.apis", "Designer.components"]
+    },
+    "Debugger": {
+      "inputs": ["Queen.projectGoal", "Planner.features", "Planner.functionalRequirements", "Planner.nonFunctionalRequirements", "Planner.recommendedTechStack", "Architect.modules", "Architect.projectStructure", "Architect.projectConventions", "System.database", "System.apis", "Designer.pages", "Designer.components", "Designer.designSystem", "Designer.navigation", "Tester.defects"]
+    },
+    "Security": {
+      "inputs": ["Queen.projectGoal", "Planner.features", "Planner.functionalRequirements", "Planner.nonFunctionalRequirements", "Planner.recommendedTechStack", "Architect.modules", "Architect.projectStructure", "Architect.projectConventions", "System.database", "System.apis", "Designer.pages", "Designer.components", "Designer.designSystem", "Designer.navigation"]
+    },
+    "Reviewer": {
+      "inputs": ["Queen.projectGoal", "Security.vulnerabilities", "Debugger.fixes"]
+    }
+  }
+}

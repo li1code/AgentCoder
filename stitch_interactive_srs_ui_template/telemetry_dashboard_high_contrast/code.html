@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Autocoder AI - Telemetry Dashboard</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;family=JetBrains+Mono:wght@400;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "surface-container-low": "#131b2e",
+                      "surface": "#0b1326",
+                      "on-tertiary-fixed": "#2a1700",
+                      "code-bg": "#020617",
+                      "on-secondary-fixed-variant": "#005236",
+                      "on-tertiary-container": "#3e2400",
+                      "slate-800": "#1E293B",
+                      "on-background": "#dae2fd",
+                      "on-primary-fixed": "#07006c",
+                      "on-secondary-fixed": "#002113",
+                      "surface-container-highest": "#2d3449",
+                      "tertiary-fixed-dim": "#ffb95f",
+                      "primary": "#c0c1ff",
+                      "surface-container": "#171f33",
+                      "surface-variant": "#2d3449",
+                      "on-surface-variant": "#c7c4d7",
+                      "surface-container-lowest": "#060e20",
+                      "slate-900": "#0F172A",
+                      "slate-950": "#020617",
+                      "tertiary-container": "#ca8100",
+                      "surface-bright": "#31394d",
+                      "on-secondary": "#003824",
+                      "secondary-fixed": "#6ffbbe",
+                      "secondary": "#4edea3",
+                      "primary-container": "#8083ff",
+                      "electric-indigo": "#818CF8",
+                      "secondary-container": "#00a572",
+                      "on-primary-container": "#0d0096",
+                      "surface-container-high": "#222a3d",
+                      "primary-fixed-dim": "#c0c1ff",
+                      "inverse-primary": "#494bd6",
+                      "slate-400": "#94A3B8",
+                      "emerald-ship": "#34D399",
+                      "surface-dim": "#0b1326",
+                      "inverse-on-surface": "#283044",
+                      "inverse-surface": "#dae2fd",
+                      "background": "#0b1326",
+                      "on-surface": "#dae2fd",
+                      "error": "#ffb4ab",
+                      "surface-tint": "#c0c1ff",
+                      "on-error-container": "#ffdad6",
+                      "outline-variant": "#464554",
+                      "secondary-fixed-dim": "#4edea3",
+                      "outline": "#908fa0",
+                      "error-container": "#93000a",
+                      "on-secondary-container": "#00311f",
+                      "tertiary-fixed": "#ffddb8",
+                      "slate-700": "#334155",
+                      "on-tertiary": "#472a00",
+                      "on-error": "#690005",
+                      "on-tertiary-fixed-variant": "#653e00",
+                      "on-primary-fixed-variant": "#2f2ebe",
+                      "on-primary": "#1000a9",
+                      "amber-warning": "#FBBF24",
+                      "primary-fixed": "#e1e0ff",
+                      "tertiary": "#ffb95f"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.125rem",
+                      "lg": "0.25rem",
+                      "xl": "0.5rem",
+                      "full": "0.75rem"
+              },
+              "spacing": {
+                      "unit": "4px",
+                      "container-padding": "1.5rem",
+                      "gutter": "1rem",
+                      "panel-gap": "2px",
+                      "sidebar-width": "280px"
+              },
+              "fontFamily": {
+                      "headline-lg": [
+                              "Inter"
+                      ],
+                      "headline-md": [
+                              "Inter"
+                      ],
+                      "body-sm": [
+                              "Inter"
+                      ],
+                      "code-lg": [
+                              "JetBrains Mono"
+                      ],
+                      "body-md": [
+                              "Inter"
+                      ],
+                      "code-sm": [
+                              "JetBrains Mono"
+                      ],
+                      "label-caps": [
+                              "JetBrains Mono"
+                      ]
+              },
+              "fontSize": {
+                      "headline-lg": [
+                              "32px",
+                              {
+                                      "lineHeight": "40px",
+                                      "letterSpacing": "-0.02em",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "headline-md": [
+                              "24px",
+                              {
+                                      "lineHeight": "32px",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "body-sm": [
+                              "12px",
+                              {
+                                      "lineHeight": "16px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "code-lg": [
+                              "14px",
+                              {
+                                      "lineHeight": "24px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "body-md": [
+                              "14px",
+                              {
+                                      "lineHeight": "20px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "code-sm": [
+                              "12px",
+                              {
+                                      "lineHeight": "18px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "label-caps": [
+                              "10px",
+                              {
+                                      "lineHeight": "12px",
+                                      "letterSpacing": "0.1em",
+                                      "fontWeight": "700"
+                              }
+                      ]
+              }
+      },
+          },
+        }
+      </script>
+<style>
+        /* Custom scrollbar for log tables */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: theme('colors.slate-950');
+        }
+        ::-webkit-scrollbar-thumb {
+            background: theme('colors.slate-700');
+            border-radius: theme('borderRadius.DEFAULT');
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: theme('colors.slate-400');
+        }
+        
+        .glow-active {
+            box-shadow: 0 0 8px rgba(129,140,248,0.4);
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-on-surface h-screen overflow-hidden flex font-body-md text-body-md">
+<!-- SideNavBar (from JSON) -->
+<nav class="fixed left-0 top-0 h-screen flex flex-col z-40 bg-slate-900 w-sidebar-width border-r border-slate-700 hidden md:flex">
+<!-- Header -->
+<div class="p-container-padding border-b border-slate-700 flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-surface-container-high flex items-center justify-center relative">
+<span class="material-symbols-outlined text-electric-indigo text-lg" data-icon="hub">hub</span>
+<span class="absolute bottom-0 right-0 w-2 h-2 rounded-full bg-emerald-ship border border-slate-900"></span>
+</div>
+<div>
+<h1 class="text-on-surface font-headline-md text-sm font-semibold tracking-tight">Project Alpha</h1>
+<p class="text-emerald-ship font-label-caps text-label-caps">Pipeline Active</p>
+</div>
+</div>
+<!-- Navigation Tabs -->
+<div class="flex-1 py-4 flex flex-col gap-1 overflow-y-auto">
+<!-- Dashboard (Inactive) -->
+<a class="text-slate-400 flex items-center gap-3 p-3 mx-2 rounded hover:bg-slate-800/50 hover:text-on-surface transition-colors font-label-caps text-label-caps" href="#">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+<span>Dashboard</span>
+</a>
+<!-- Workspace (Inactive) -->
+<a class="text-slate-400 flex items-center gap-3 p-3 mx-2 rounded hover:bg-slate-800/50 hover:text-on-surface transition-colors font-label-caps text-label-caps" href="#">
+<span class="material-symbols-outlined" data-icon="terminal">terminal</span>
+<span>Workspace</span>
+</a>
+<!-- Telemetry (Active) -->
+<a class="text-on-surface bg-slate-800 border-r-2 border-electric-indigo flex items-center gap-3 p-3 mx-2 rounded shadow-[0_0_8px_rgba(129,140,248,0.4)] font-label-caps text-label-caps" href="#">
+<span class="material-symbols-outlined text-electric-indigo" data-icon="analytics" data-weight="fill" style="font-variation-settings: 'FILL' 1;">analytics</span>
+<span>Telemetry</span>
+</a>
+<!-- Health (Inactive) -->
+<a class="text-slate-400 flex items-center gap-3 p-3 mx-2 rounded hover:bg-slate-800/50 hover:text-on-surface transition-colors font-label-caps text-label-caps" href="#">
+<span class="material-symbols-outlined" data-icon="pulse">pause</span>
+<span>Health</span>
+</a>
+<!-- Settings (Inactive) -->
+<a class="text-slate-400 flex items-center gap-3 p-3 mx-2 rounded hover:bg-slate-800/50 hover:text-on-surface transition-colors font-label-caps text-label-caps" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span>Settings</span>
+</a>
+</div>
+<!-- CTA & Footer -->
+<div class="p-4 border-t border-slate-700 flex flex-col gap-4">
+<button class="w-full bg-electric-indigo text-white font-headline-md text-sm font-bold py-2 px-4 rounded hover:bg-indigo-500 transition-colors flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-sm" data-icon="add">add</span>
+                New Agent
+            </button>
+<div class="flex flex-col gap-2">
+<a class="text-slate-400 flex items-center gap-3 p-2 rounded hover:bg-slate-800/50 hover:text-on-surface transition-colors font-label-caps text-label-caps" href="#">
+<span class="material-symbols-outlined text-[16px]" data-icon="menu_book">menu_book</span>
+<span>Documentation</span>
+</a>
+<a class="text-slate-400 flex items-center gap-3 p-2 rounded hover:bg-slate-800/50 hover:text-on-surface transition-colors font-label-caps text-label-caps" href="#">
+<span class="material-symbols-outlined text-[16px]" data-icon="help">help</span>
+<span>Support</span>
+</a>
+</div>
+</div>
+</nav>
+<!-- Main Content Area -->
+<main class="flex-1 flex flex-col ml-0 md:ml-sidebar-width h-screen bg-slate-950">
+<!-- TopAppBar (from JSON) -->
+<header class="flex justify-between items-center w-full px-container-padding h-14 z-50 bg-slate-950 border-b border-slate-700 docked full-width top-0">
+<!-- Brand / Nav Links -->
+<div class="flex items-center gap-6">
+<div class="text-on-surface font-headline-md text-headline-md font-bold flex items-center gap-2">
+<span class="material-symbols-outlined text-electric-indigo" data-icon="terminal">terminal</span>
+                    Autocoder AI
+                </div>
+<nav class="hidden md:flex gap-4 items-center">
+<a class="text-slate-400 font-body-md text-body-md hover:text-electric-indigo hover:bg-slate-900 transition-colors px-2 py-1 rounded" href="#">RuFlo Pipeline</a>
+<span class="text-slate-700">/</span>
+<a class="text-slate-400 font-body-md text-body-md hover:text-electric-indigo hover:bg-slate-900 transition-colors px-2 py-1 rounded" href="#">v2.4.0-stable</a>
+</nav>
+</div>
+<!-- Search (on_right logic) & Actions -->
+<div class="flex items-center gap-4">
+<div class="relative hidden lg:block">
+<span class="material-symbols-outlined absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-sm" data-icon="search">search</span>
+<input class="bg-slate-900 border border-slate-700 text-on-surface font-code-sm text-code-sm rounded pl-8 pr-3 py-1.5 focus:border-electric-indigo focus:ring-1 focus:ring-electric-indigo outline-none transition-all w-64" placeholder="Search logs..." type="text"/>
+</div>
+<div class="flex items-center gap-2 border-l border-slate-700 pl-4">
+<button class="text-slate-400 hover:text-electric-indigo hover:bg-slate-900 p-1.5 rounded transition-colors" title="Monitor">
+<span class="material-symbols-outlined" data-icon="monitor_heart">monitor_heart</span>
+</button>
+<button class="text-slate-400 hover:text-electric-indigo hover:bg-slate-900 p-1.5 rounded transition-colors relative" title="Notifications">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+<span class="absolute top-1 right-1 w-2 h-2 bg-amber-warning rounded-full"></span>
+</button>
+<button class="text-slate-400 hover:text-electric-indigo hover:bg-slate-900 p-1.5 rounded transition-colors" title="Account">
+<span class="material-symbols-outlined" data-icon="account_circle">account_circle</span>
+</button>
+</div>
+<div class="flex items-center gap-2 ml-2">
+<button class="px-3 py-1.5 border border-slate-700 text-slate-300 font-body-sm text-body-sm rounded hover:bg-slate-900 transition-colors">Halt Pipeline</button>
+<button class="px-3 py-1.5 bg-electric-indigo text-white font-body-sm text-body-sm rounded hover:bg-indigo-500 transition-colors font-bold shadow-[0_0_8px_rgba(129,140,248,0.4)]">Approve &amp; Generate</button>
+</div>
+</div>
+</header>
+<!-- Canvas -->
+<div class="flex-1 overflow-y-auto p-gutter bg-slate-950 flex flex-col gap-4">
+<!-- Bento Grid: Charts -->
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+<!-- Chart 1: Tool Execution Frequency -->
+<div class="bg-slate-900 border border-slate-700 rounded-lg p-4 flex flex-col gap-3">
+<div class="flex justify-between items-center">
+<h2 class="font-headline-md text-sm font-semibold text-on-surface">Tool Execution Frequency</h2>
+<span class="material-symbols-outlined text-slate-400 text-sm" data-icon="bar_chart">bar_chart</span>
+</div>
+<div class="flex-1 min-h-[120px] bg-slate-950 rounded border border-slate-700 p-2 relative flex items-end gap-1">
+<!-- Simulated Bar Chart -->
+<div class="flex-1 bg-electric-indigo/20 border border-electric-indigo/50 rounded-t h-[40%] hover:bg-electric-indigo/40 transition-colors group relative">
+<div class="absolute -top-6 left-1/2 -translate-x-1/2 bg-slate-800 text-xs font-code-sm text-on-surface px-1 rounded opacity-0 group-hover:opacity-100 border border-slate-600">grep</div>
+</div>
+<div class="flex-1 bg-electric-indigo/20 border border-electric-indigo/50 rounded-t h-[80%] hover:bg-electric-indigo/40 transition-colors group relative">
+<div class="absolute -top-6 left-1/2 -translate-x-1/2 bg-slate-800 text-xs font-code-sm text-on-surface px-1 rounded opacity-0 group-hover:opacity-100 border border-slate-600">ast_parse</div>
+</div>
+<div class="flex-1 bg-electric-indigo/20 border border-electric-indigo/50 rounded-t h-[30%] hover:bg-electric-indigo/40 transition-colors group relative">
+<div class="absolute -top-6 left-1/2 -translate-x-1/2 bg-slate-800 text-xs font-code-sm text-on-surface px-1 rounded opacity-0 group-hover:opacity-100 border border-slate-600">git_diff</div>
+</div>
+<div class="flex-1 bg-electric-indigo/40 border border-electric-indigo rounded-t h-[95%] shadow-[0_0_8px_rgba(129,140,248,0.4)] group relative">
+<div class="absolute -top-6 left-1/2 -translate-x-1/2 bg-slate-800 text-xs font-code-sm text-on-surface px-1 rounded opacity-0 group-hover:opacity-100 border border-slate-600 z-10">edit_file</div>
+</div>
+<div class="flex-1 bg-electric-indigo/20 border border-electric-indigo/50 rounded-t h-[60%] hover:bg-electric-indigo/40 transition-colors group relative">
+<div class="absolute -top-6 left-1/2 -translate-x-1/2 bg-slate-800 text-xs font-code-sm text-on-surface px-1 rounded opacity-0 group-hover:opacity-100 border border-slate-600">lint</div>
+</div>
+</div>
+</div>
+<!-- Chart 2: System Latency -->
+<div class="bg-slate-900 border border-slate-700 rounded-lg p-4 flex flex-col gap-3">
+<div class="flex justify-between items-center">
+<h2 class="font-headline-md text-sm font-semibold text-on-surface">System Latency (ms)</h2>
+<span class="material-symbols-outlined text-slate-400 text-sm" data-icon="ssid_chart">ssid_chart</span>
+</div>
+<div class="flex-1 min-h-[120px] bg-slate-950 rounded border border-slate-700 p-2 relative overflow-hidden">
+<!-- Simulated Line Chart via CSS gradient hack for visual -->
+<div class="absolute inset-0 top-1/2 h-[2px] bg-slate-700/50 border-t border-dashed border-slate-600"></div>
+<div class="absolute inset-0" style="background: linear-gradient(90deg, rgba(129,140,248,0) 0%, rgba(129,140,248,0.2) 20%, rgba(129,140,248,0.8) 50%, rgba(251,191,36,0.8) 70%, rgba(129,140,248,0.4) 100%); clip-path: polygon(0 80%, 20% 70%, 40% 75%, 50% 30%, 60% 85%, 70% 20%, 80% 60%, 100% 90%, 100% 100%, 0 100%); opacity: 0.5;"></div>
+<svg class="absolute inset-0 w-full h-full" preserveaspectratio="none">
+<polyline fill="none" points="0,80 20,70 40,75 50,30 60,85 70,20 80,60 100,90" stroke="#818CF8" stroke-width="2" vector-effect="non-scaling-stroke"></polyline>
+</svg>
+<div class="absolute top-2 right-2 flex items-center gap-1 bg-slate-900/80 px-2 py-0.5 rounded border border-slate-700">
+<div class="w-2 h-2 rounded-full bg-amber-warning animate-pulse"></div>
+<span class="font-code-sm text-[10px] text-amber-warning">Spike Detected</span>
+</div>
+</div>
+</div>
+<!-- Chart 3: Agent Token Usage -->
+<div class="bg-slate-900 border border-slate-700 rounded-lg p-4 flex flex-col gap-3">
+<div class="flex justify-between items-center">
+<h2 class="font-headline-md text-sm font-semibold text-on-surface">Agent Token Usage</h2>
+<span class="material-symbols-outlined text-slate-400 text-sm" data-icon="donut_large">donut_large</span>
+</div>
+<div class="flex-1 min-h-[120px] bg-slate-950 rounded border border-slate-700 p-2 flex items-center justify-between">
+<!-- Simulated Donut Chart using CSS conic-gradient -->
+<div class="relative w-20 h-20 rounded-full flex items-center justify-center mx-4" style="background: conic-gradient(#818CF8 0% 45%, #34D399 45% 75%, #FBBF24 75% 90%, #475569 90% 100%);">
+<div class="w-14 h-14 bg-slate-950 rounded-full flex items-center justify-center shadow-inner">
+<span class="font-code-sm text-xs text-on-surface">14.2k</span>
+</div>
+</div>
+<div class="flex flex-col gap-1.5 flex-1 pr-2">
+<div class="flex justify-between items-center font-code-sm text-[10px]">
+<div class="flex items-center gap-1"><span class="w-2 h-2 rounded-sm bg-electric-indigo"></span>CoderAgent</div>
+<span class="text-slate-400">45%</span>
+</div>
+<div class="flex justify-between items-center font-code-sm text-[10px]">
+<div class="flex items-center gap-1"><span class="w-2 h-2 rounded-sm bg-emerald-ship"></span>ReviewAgent</div>
+<span class="text-slate-400">30%</span>
+</div>
+<div class="flex justify-between items-center font-code-sm text-[10px]">
+<div class="flex items-center gap-1"><span class="w-2 h-2 rounded-sm bg-amber-warning"></span>TestAgent</div>
+<span class="text-slate-400">15%</span>
+</div>
+<div class="flex justify-between items-center font-code-sm text-[10px]">
+<div class="flex items-center gap-1"><span class="w-2 h-2 rounded-sm bg-slate-700"></span>SysPrompt</div>
+<span class="text-slate-400">10%</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Log Table Panel -->
+<div class="flex-1 bg-slate-900 border border-slate-700 rounded-lg flex flex-col overflow-hidden min-h-[300px]">
+<!-- Table Toolbar -->
+<div class="p-3 border-b border-slate-700 flex justify-between items-center bg-slate-900/50">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-slate-400" data-icon="list_alt">list_alt</span>
+<h3 class="font-headline-md text-sm font-semibold">Execution Log</h3>
+<span class="bg-slate-800 text-slate-300 font-label-caps text-[10px] px-2 py-0.5 rounded-full border border-slate-600">Live</span>
+</div>
+<div class="flex items-center gap-2">
+<!-- Filters -->
+<div class="flex bg-slate-950 rounded border border-slate-700 p-0.5">
+<button class="px-2 py-1 text-xs font-code-sm bg-slate-800 text-on-surface rounded shadow-sm">All</button>
+<button class="px-2 py-1 text-xs font-code-sm text-slate-400 hover:text-on-surface transition-colors">Success</button>
+<button class="px-2 py-1 text-xs font-code-sm text-slate-400 hover:text-error transition-colors">Error</button>
+</div>
+<button class="text-slate-400 hover:text-on-surface p-1 rounded border border-slate-700 bg-slate-950 transition-colors" title="Export">
+<span class="material-symbols-outlined text-sm" data-icon="download">download</span>
+</button>
+</div>
+</div>
+<!-- Table Content -->
+<div class="flex-1 overflow-auto bg-code-bg">
+<table class="w-full text-left border-collapse">
+<thead class="sticky top-0 bg-slate-950/95 backdrop-blur z-10 font-label-caps text-[10px] text-slate-400 border-b border-slate-700 shadow-sm">
+<tr>
+<th class="p-3 font-medium tracking-wider">Time</th>
+<th class="p-3 font-medium tracking-wider">Agent Name</th>
+<th class="p-3 font-medium tracking-wider w-1/2">Command / Action</th>
+<th class="p-3 font-medium tracking-wider">Result</th>
+<th class="p-3 font-medium tracking-wider text-right">Latency</th>
+</tr>
+</thead>
+<tbody class="font-code-sm text-xs divide-y divide-slate-700">
+<!-- Row 1: Success -->
+<tr class="hover:bg-slate-800/30 transition-colors group">
+<td class="p-3 text-slate-500 whitespace-nowrap">10:42:01.004</td>
+<td class="p-3">
+<div class="flex items-center gap-2">
+<span class="w-1.5 h-1.5 rounded-full bg-electric-indigo"></span>
+<span class="text-on-surface">CoderAgent_Alpha</span>
+</div>
+</td>
+<td class="p-3">
+<code class="bg-slate-900 text-primary-fixed border border-slate-700 px-1.5 py-0.5 rounded">python -m pytest tests/test_auth.py</code>
+</td>
+<td class="p-3">
+<span class="inline-flex items-center gap-1 text-emerald-ship bg-emerald-ship/10 border border-emerald-ship/20 px-2 py-0.5 rounded text-[10px] uppercase font-bold">
+<span class="material-symbols-outlined text-[12px]" data-icon="check_circle">check_circle</span>
+                                        Success
+                                    </span>
+</td>
+<td class="p-3 text-right text-slate-400">1.2s</td>
+</tr>
+<!-- Row 2: Error -->
+<tr class="hover:bg-slate-800/30 transition-colors group bg-error/5">
+<td class="p-3 text-slate-500 whitespace-nowrap">10:41:55.221</td>
+<td class="p-3">
+<div class="flex items-center gap-2">
+<span class="w-1.5 h-1.5 rounded-full bg-amber-warning"></span>
+<span class="text-on-surface">DB_Migration_Agent</span>
+</div>
+</td>
+<td class="p-3">
+<code class="bg-slate-900 text-error border border-error/30 px-1.5 py-0.5 rounded">psql -U root -d main -c "ALTER TABLE..."</code>
+</td>
+<td class="p-3">
+<span class="inline-flex items-center gap-1 text-error bg-error/10 border border-error/20 px-2 py-0.5 rounded text-[10px] uppercase font-bold">
+<span class="material-symbols-outlined text-[12px]" data-icon="error">error</span>
+                                        Code 1
+                                    </span>
+</td>
+<td class="p-3 text-right text-slate-400">450ms</td>
+</tr>
+<!-- Row 3: Running -->
+<tr class="hover:bg-slate-800/30 transition-colors group">
+<td class="p-3 text-slate-500 whitespace-nowrap">10:41:50.000</td>
+<td class="p-3">
+<div class="flex items-center gap-2">
+<span class="w-1.5 h-1.5 rounded-full bg-electric-indigo animate-pulse"></span>
+<span class="text-on-surface">ReviewAgent_Beta</span>
+</div>
+</td>
+<td class="p-3">
+<code class="bg-slate-900 text-slate-300 border border-slate-700 px-1.5 py-0.5 rounded">git diff HEAD~1..HEAD</code>
+</td>
+<td class="p-3">
+<span class="inline-flex items-center gap-1 text-electric-indigo bg-electric-indigo/10 border border-electric-indigo/20 px-2 py-0.5 rounded text-[10px] uppercase font-bold shadow-[0_0_8px_rgba(129,140,248,0.2)]">
+<span class="material-symbols-outlined text-[12px] animate-spin" data-icon="sync">sync</span>
+                                        Running
+                                    </span>
+</td>
+<td class="p-3 text-right text-slate-400">-</td>
+</tr>
+<!-- Row 4: Success -->
+<tr class="hover:bg-slate-800/30 transition-colors group">
+<td class="p-3 text-slate-500 whitespace-nowrap">10:41:45.992</td>
+<td class="p-3">
+<div class="flex items-center gap-2">
+<span class="w-1.5 h-1.5 rounded-full bg-electric-indigo"></span>
+<span class="text-on-surface">CoderAgent_Alpha</span>
+</div>
+</td>
+<td class="p-3">
+<code class="bg-slate-900 text-slate-300 border border-slate-700 px-1.5 py-0.5 rounded">cat src/utils/formatter.py</code>
+</td>
+<td class="p-3">
+<span class="inline-flex items-center gap-1 text-emerald-ship bg-emerald-ship/10 border border-emerald-ship/20 px-2 py-0.5 rounded text-[10px] uppercase font-bold">
+<span class="material-symbols-outlined text-[12px]" data-icon="check_circle">check_circle</span>
+                                        Success
+                                    </span>
+</td>
+<td class="p-3 text-right text-slate-400">12ms</td>
+</tr>
+<!-- Row 5: Success -->
+<tr class="hover:bg-slate-800/30 transition-colors group">
+<td class="p-3 text-slate-500 whitespace-nowrap">10:41:40.105</td>
+<td class="p-3">
+<div class="flex items-center gap-2">
+<span class="w-1.5 h-1.5 rounded-full bg-slate-500"></span>
+<span class="text-on-surface">SysPrompt_Engine</span>
+</div>
+</td>
+<td class="p-3">
+<code class="bg-slate-900 text-slate-300 border border-slate-700 px-1.5 py-0.5 rounded">Fetch Context: issue_#402</code>
+</td>
+<td class="p-3">
+<span class="inline-flex items-center gap-1 text-emerald-ship bg-emerald-ship/10 border border-emerald-ship/20 px-2 py-0.5 rounded text-[10px] uppercase font-bold">
+<span class="material-symbols-outlined text-[12px]" data-icon="check_circle">check_circle</span>
+                                        Success
+                                    </span>
+</td>
+<td class="p-3 text-right text-slate-400">85ms</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+</main>
+</body></html>

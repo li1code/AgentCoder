@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Autocoder AI - Interactive Workspace</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;family=JetBrains+Mono:wght@400;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-tertiary-fixed": "#191c1e",
+                        "inverse-on-surface": "#2a3043",
+                        "surface-bright": "#33394c",
+                        "tertiary-container": "#939698",
+                        "primary": "#bdc2ff",
+                        "on-primary-fixed-variant": "#2f3aa3",
+                        "on-tertiary-fixed-variant": "#444749",
+                        "outline-variant": "#454653",
+                        "surface-container-lowest": "#070d1f",
+                        "surface-container-low": "#151b2d",
+                        "outline": "#908f9e",
+                        "surface-dim": "#0c1324",
+                        "primary-fixed": "#e0e0ff",
+                        "on-secondary": "#00363e",
+                        "surface-variant": "#2e3447",
+                        "inverse-primary": "#4953bc",
+                        "surface-container-highest": "#2e3447",
+                        "on-secondary-fixed": "#001f25",
+                        "on-tertiary": "#2d3133",
+                        "on-background": "#dce1fb",
+                        "on-surface": "#dce1fb",
+                        "surface": "#0c1324",
+                        "on-error-container": "#ffdad6",
+                        "on-primary": "#131e8c",
+                        "on-surface-variant": "#c6c5d5",
+                        "on-tertiary-container": "#2b2f30",
+                        "inverse-surface": "#dce1fb",
+                        "background": "#0c1324",
+                        "surface-tint": "#bdc2ff",
+                        "tertiary": "#c4c7c9",
+                        "on-primary-fixed": "#000767",
+                        "on-secondary-container": "#00515d",
+                        "surface-container-high": "#23293c",
+                        "error-container": "#93000a",
+                        "surface-container": "#191f31",
+                        "secondary": "#5de6ff",
+                        "on-error": "#690005",
+                        "secondary-container": "#00cbe6",
+                        "secondary-fixed": "#a2eeff",
+                        "on-primary-container": "#101b8a",
+                        "primary-container": "#818cf8",
+                        "primary-fixed-dim": "#bdc2ff",
+                        "error": "#ffb4ab",
+                        "tertiary-fixed-dim": "#c4c7c9",
+                        "on-secondary-fixed-variant": "#004e5a",
+                        "secondary-fixed-dim": "#2fd9f4",
+                        "tertiary-fixed": "#e0e3e5",
+                        "code-bg": "#020617",
+                        "electric-indigo": "#6366F1",
+                        "emerald-ship": "#10B981",
+                        "amber-warning": "#F59E0B"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "gutter": "24px",
+                        "margin-desktop": "40px",
+                        "container-max": "1280px",
+                        "margin-mobile": "16px",
+                        "unit": "4px",
+                        "container-padding": "1.5rem",
+                        "panel-gap": "2px",
+                        "sidebar-width": "280px"
+                    },
+                    "fontFamily": {
+                        "headline-lg-mobile": ["Geist"],
+                        "label-md": ["JetBrains Mono"],
+                        "body-md": ["Inter"],
+                        "headline-xl": ["Geist"],
+                        "headline-lg": ["Geist"],
+                        "body-sm": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "code-lg": ["JetBrains Mono"],
+                        "code-sm": ["JetBrains Mono"],
+                        "label-caps": ["JetBrains Mono"]
+                    },
+                    "fontSize": {
+                        "headline-lg-mobile": ["24px", { "lineHeight": "32px", "fontWeight": "600" }],
+                        "label-md": ["12px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "500" }],
+                        "body-md": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "headline-xl": ["48px", { "lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "headline-lg": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "body-sm": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "headline-md": ["24px", { "lineHeight": "32px", "fontWeight": "600" }],
+                        "code-lg": ["14px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "code-sm": ["12px", { "lineHeight": "18px", "fontWeight": "400" }],
+                        "label-caps": ["10px", { "lineHeight": "12px", "letterSpacing": "0.1em", "fontWeight": "700" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body {
+            background-color: theme('colors.background');
+            color: theme('colors.on-surface');
+            overflow: hidden; /* Prevent global scrolling, manage within panels */
+        }
+        /* Scrollbar styling for code-heavy aesthetic */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: theme('colors.surface-container-low');
+        }
+        ::-webkit-scrollbar-thumb {
+            background: theme('colors.slate-700');
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: theme('colors.slate-400');
+        }
+        
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.9);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(99, 102, 241, 0.5);
+        }
+    </style>
+</head>
+<body class="flex flex-col h-screen text-body-md font-body-md">
+<!-- TopAppBar -->
+<header class="bg-slate-900 border-b border-slate-700 docked full-width top-0 flex justify-between items-center w-full px-container-padding h-14 z-50">
+<div class="flex items-center gap-6">
+<div class="text-headline-md font-headline-md font-bold text-on-surface">Autocoder AI</div>
+<nav class="hidden md:flex gap-4 h-full items-center">
+<a class="text-electric-indigo font-bold border-b-2 border-electric-indigo pb-1 h-full flex items-center" href="#">
+<span class="text-label-caps font-label-caps">Workspace</span>
+</a>
+<a class="text-slate-400 font-body-md hover:text-electric-indigo hover:bg-slate-800 transition-colors h-full flex items-center px-2" href="#">
+<span class="text-label-caps font-label-caps">RuFlo Pipeline</span>
+</a>
+<a class="text-slate-400 font-body-md hover:text-electric-indigo hover:bg-slate-800 transition-colors h-full flex items-center px-2" href="#">
+<span class="text-label-caps font-label-caps">v2.4.0-stable</span>
+</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<div class="flex gap-2">
+<button class="text-slate-400 hover:text-electric-indigo hover:bg-slate-800 transition-colors p-2 rounded">
+<span class="material-symbols-outlined" data-icon="monitor_heart">monitor_heart</span>
+</button>
+<button class="text-slate-400 hover:text-electric-indigo hover:bg-slate-800 transition-colors p-2 rounded">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+</button>
+<button class="text-slate-400 hover:text-electric-indigo hover:bg-slate-800 transition-colors p-2 rounded">
+<span class="material-symbols-outlined" data-icon="account_circle">account_circle</span>
+</button>
+</div>
+<button class="border border-slate-700 bg-transparent text-on-surface px-4 py-1.5 rounded text-label-caps font-label-caps hover:bg-slate-800 transition-colors">
+                Halt Pipeline
+            </button>
+<button class="bg-emerald-ship text-white px-4 py-1.5 rounded text-label-caps font-label-caps font-bold shadow-[0_0_8px_rgba(16,185,129,0.4)] hover:bg-secondary-container transition-colors">
+                Approve &amp; Generate
+            </button>
+</div>
+</header>
+<!-- Main Workspace Area (Split-pane) -->
+<main class="flex flex-1 overflow-hidden">
+<!-- SideNavBar (Contextual, acting as tool selector rather than global nav) -->
+<aside class="bg-slate-800 border-r border-slate-700 w-16 md:w-sidebar-width flex flex-col z-40 flex-shrink-0 transition-all duration-300">
+<div class="p-4 border-b border-slate-700 hidden md:flex items-center gap-3">
+<div class="w-8 h-8 rounded bg-slate-900 border border-electric-indigo flex items-center justify-center shadow-[0_0_8px_rgba(99,102,241,0.4)]">
+<span class="material-symbols-outlined text-electric-indigo text-sm" data-icon="rocket_launch">rocket_launch</span>
+</div>
+<div>
+<div class="text-body-md font-body-md font-bold text-on-surface">Project Alpha</div>
+<div class="text-body-sm font-body-sm text-secondary">Pipeline Active</div>
+</div>
+</div>
+<nav class="flex-1 py-2 flex flex-col gap-1">
+<a class="text-slate-400 flex items-center gap-3 p-3 hover:bg-slate-700/50 hover:text-on-surface mx-2 rounded transition-colors group justify-center md:justify-start" href="#">
+<span class="material-symbols-outlined group-hover:text-electric-indigo transition-colors" data-icon="dashboard">dashboard</span>
+<span class="text-label-caps font-label-caps hidden md:block">Dashboard</span>
+</a>
+<a class="text-on-surface bg-slate-700 border-r-2 border-electric-indigo flex items-center gap-3 p-3 mx-2 rounded shadow-[0_0_8px_rgba(99,102,241,0.4)] justify-center md:justify-start" href="#">
+<span class="material-symbols-outlined text-electric-indigo" data-icon="terminal">terminal</span>
+<span class="text-label-caps font-label-caps hidden md:block">Workspace</span>
+</a>
+<a class="text-slate-400 flex items-center gap-3 p-3 hover:bg-slate-700/50 hover:text-on-surface mx-2 rounded transition-colors group justify-center md:justify-start" href="#">
+<span class="material-symbols-outlined group-hover:text-electric-indigo transition-colors" data-icon="analytics">analytics</span>
+<span class="text-label-caps font-label-caps hidden md:block">Telemetry</span>
+</a>
+<a class="text-slate-400 flex items-center gap-3 p-3 hover:bg-slate-700/50 hover:text-on-surface mx-2 rounded transition-colors group justify-center md:justify-start" href="#">
+<span class="material-symbols-outlined group-hover:text-electric-indigo transition-colors" data-icon="pulse">pause</span>
+<span class="text-label-caps font-label-caps hidden md:block">Health</span>
+</a>
+<a class="text-slate-400 flex items-center gap-3 p-3 hover:bg-slate-700/50 hover:text-on-surface mx-2 rounded transition-colors group justify-center md:justify-start mt-auto" href="#">
+<span class="material-symbols-outlined group-hover:text-electric-indigo transition-colors" data-icon="settings">settings</span>
+<span class="text-label-caps font-label-caps hidden md:block">Settings</span>
+</a>
+</nav>
+<div class="p-4 border-t border-slate-700 hidden md:block">
+<button class="w-full bg-electric-indigo text-white px-4 py-2 rounded text-label-caps font-label-caps font-bold hover:bg-primary-container transition-colors flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-sm" data-icon="add">add</span> New Agent
+                </button>
+</div>
+<div class="p-2 hidden md:flex flex-col gap-1 border-t border-slate-700">
+<a class="text-slate-400 flex items-center gap-3 p-2 hover:bg-slate-700/50 hover:text-on-surface rounded transition-colors text-body-sm font-body-sm" href="#">
+<span class="material-symbols-outlined text-sm" data-icon="menu_book">menu_book</span>
+<span>Documentation</span>
+</a>
+<a class="text-slate-400 flex items-center gap-3 p-2 hover:bg-slate-700/50 hover:text-on-surface rounded transition-colors text-body-sm font-body-sm" href="#">
+<span class="material-symbols-outlined text-sm" data-icon="help">help</span>
+<span>Support</span>
+</a>
+</div>
+</aside>
+<!-- IDE Content Area -->
+<div class="flex-1 flex flex-col lg:flex-row bg-slate-950 overflow-hidden">
+<!-- Left Pane: Chat/Log Interface (40% width) -->
+<section class="w-full lg:w-[40%] flex flex-col border-r border-slate-700 bg-slate-900 overflow-hidden">
+<div class="p-3 border-b border-slate-700 flex justify-between items-center bg-slate-900">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-electric-indigo text-sm" data-icon="chat">chat</span>
+<span class="text-label-caps font-label-caps text-on-surface">Pipeline Interactions</span>
+</div>
+<div class="px-2 py-0.5 bg-slate-800 border border-slate-600 rounded text-label-caps font-label-caps text-slate-300">
+                        Pass 1: Architect
+                    </div>
+</div>
+<div class="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
+<!-- User Message -->
+<div class="flex flex-col items-end gap-1">
+<div class="bg-slate-800 border border-slate-700 p-3 rounded-lg rounded-tr-none max-w-[85%]">
+<p class="text-body-md font-body-md text-on-surface">Design a microservices architecture for a scalable e-commerce backend.</p>
+</div>
+<span class="text-label-caps font-label-caps text-slate-500">10:42 AM • User</span>
+</div>
+<!-- Agent Message (Architect) -->
+<div class="flex flex-col items-start gap-1">
+<div class="bg-slate-950 border border-electric-indigo/50 p-3 rounded-lg rounded-tl-none max-w-[90%] relative shadow-[0_0_15px_rgba(99,102,241,0.1)]">
+<div class="absolute -left-2 -top-2 w-4 h-4 bg-electric-indigo rounded-full border-2 border-slate-900 animate-pulse"></div>
+<div class="flex items-center gap-2 mb-2 pb-2 border-b border-slate-700">
+<span class="material-symbols-outlined text-electric-indigo text-sm" data-icon="architecture">architecture</span>
+<span class="text-label-caps font-label-caps text-electric-indigo">Architect Agent</span>
+</div>
+<p class="text-body-md font-body-md text-slate-300 mb-2">Analyzing requirements. Proposing a 4-service split: API Gateway, User Auth, Product Catalog, and Order Processing.</p>
+<div class="bg-slate-950 border border-slate-700 rounded p-2 text-code-sm font-code-sm text-slate-400">
+                                &gt; Initializing diagram generator...<br/>
+                                &gt; Building entity relations...<br/>
+                                &gt; [Success] Architecture draft generated.
+                            </div>
+</div>
+<span class="text-label-caps font-label-caps text-slate-500">10:43 AM • RuFlo Pipeline</span>
+</div>
+</div>
+<!-- Input Area -->
+<div class="p-3 border-t border-slate-700 bg-slate-900">
+<div class="relative flex items-center">
+<input class="w-full bg-slate-950 border border-slate-700 rounded py-2 pl-3 pr-10 text-body-md font-body-md text-on-surface focus:border-electric-indigo focus:ring-0 focus:shadow-[inset_0_0_4px_rgba(99,102,241,0.5)] placeholder-slate-500 transition-all" placeholder="Send instructions to pipeline..." type="text"/>
+<button class="absolute right-2 text-slate-400 hover:text-electric-indigo p-1">
+<span class="material-symbols-outlined text-sm" data-icon="send">send</span>
+</button>
+</div>
+</div>
+</section>
+<!-- Right Pane: Tabs & Content (60% width) -->
+<section class="w-full lg:w-[60%] flex flex-col bg-slate-900 relative border-l border-slate-700">
+<!-- Tab Headers -->
+<div class="flex border-b border-slate-700 bg-slate-900 overflow-x-auto no-scrollbar">
+<button class="px-4 py-2 text-label-caps font-label-caps text-electric-indigo border-b-2 border-electric-indigo flex items-center gap-2 bg-slate-950">
+<span class="material-symbols-outlined text-sm" data-icon="account_tree">account_tree</span> Flowchart
+                    </button>
+<button class="px-4 py-2 text-label-caps font-label-caps text-slate-400 hover:text-slate-200 border-b-2 border-transparent hover:bg-slate-800/50 flex items-center gap-2 transition-colors">
+<span class="material-symbols-outlined text-sm" data-icon="code">code</span> Code
+                    </button>
+<button class="px-4 py-2 text-label-caps font-label-caps text-slate-400 hover:text-slate-200 border-b-2 border-transparent hover:bg-slate-800/50 flex items-center gap-2 transition-colors">
+<span class="material-symbols-outlined text-sm" data-icon="preview">preview</span> Live Preview
+                    </button>
+<button class="px-4 py-2 text-label-caps font-label-caps text-slate-400 hover:text-slate-200 border-b-2 border-transparent hover:bg-slate-800/50 flex items-center gap-2 transition-colors ml-auto border-l border-slate-700">
+<span class="material-symbols-outlined text-sm" data-icon="terminal">terminal</span> Telemetry
+                    </button>
+</div>
+<!-- Tab Content Area (Flowchart Active) -->
+<div class="flex-1 p-4 overflow-auto bg-slate-950 flex items-center justify-center relative">
+<!-- Placeholder for Mermaid Diagram, using a stylized bento grid layout to represent the architecture -->
+<div class="w-full max-w-3xl grid grid-cols-3 gap-4">
+<!-- API Gateway -->
+<div class="col-span-3 bg-slate-900 border border-electric-indigo/50 rounded-lg p-4 flex flex-col items-center justify-center relative shadow-[0_0_20px_rgba(99,102,241,0.15)]">
+<span class="px-2 py-1 bg-slate-950 border border-slate-700 rounded text-label-caps font-label-caps text-slate-400 absolute top-2 right-2">Port: 8080</span>
+<span class="material-symbols-outlined text-electric-indigo text-3xl mb-2" data-icon="router">router</span>
+<h3 class="text-headline-md font-headline-md text-on-surface">API Gateway</h3>
+<p class="text-body-sm font-body-sm text-slate-400 text-center mt-1">Routes incoming traffic</p>
+</div>
+<!-- Connectors -->
+<div class="col-span-3 flex justify-around py-2">
+<div class="w-[2px] h-8 bg-slate-600 relative"><div class="absolute -bottom-1 -left-1 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[8px] border-t-slate-600"></div></div>
+<div class="w-[2px] h-8 bg-slate-600 relative"><div class="absolute -bottom-1 -left-1 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[8px] border-t-slate-600"></div></div>
+<div class="w-[2px] h-8 bg-slate-600 relative"><div class="absolute -bottom-1 -left-1 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[8px] border-t-slate-600"></div></div>
+</div>
+<!-- Services -->
+<div class="bg-slate-900 border border-slate-700 rounded-lg p-4 flex flex-col items-center justify-center hover:border-slate-500 transition-colors cursor-pointer">
+<span class="material-symbols-outlined text-secondary text-2xl mb-2" data-icon="security">security</span>
+<h4 class="text-body-md font-body-md font-bold text-on-surface">Auth Service</h4>
+<div class="mt-2 flex flex-wrap gap-1 justify-center">
+<span class="px-1.5 py-0.5 bg-slate-950 border border-slate-700 rounded text-[8px] font-label-caps text-slate-300">JWT</span>
+<span class="px-1.5 py-0.5 bg-slate-950 border border-slate-700 rounded text-[8px] font-label-caps text-slate-300">Redis</span>
+</div>
+</div>
+<div class="bg-slate-900 border border-slate-700 rounded-lg p-4 flex flex-col items-center justify-center hover:border-slate-500 transition-colors cursor-pointer">
+<span class="material-symbols-outlined text-tertiary text-2xl mb-2" data-icon="inventory_2">inventory_2</span>
+<h4 class="text-body-md font-body-md font-bold text-on-surface">Catalog Service</h4>
+<div class="mt-2 flex flex-wrap gap-1 justify-center">
+<span class="px-1.5 py-0.5 bg-slate-950 border border-slate-700 rounded text-[8px] font-label-caps text-slate-300">GraphQL</span>
+<span class="px-1.5 py-0.5 bg-slate-950 border border-slate-700 rounded text-[8px] font-label-caps text-slate-300">Mongo</span>
+</div>
+</div>
+<div class="bg-slate-900 border border-slate-700 rounded-lg p-4 flex flex-col items-center justify-center hover:border-slate-500 transition-colors cursor-pointer">
+<span class="material-symbols-outlined text-amber-warning text-2xl mb-2" data-icon="shopping_cart">shopping_cart</span>
+<h4 class="text-body-md font-body-md font-bold text-on-surface">Order Service</h4>
+<div class="mt-2 flex flex-wrap gap-1 justify-center">
+<span class="px-1.5 py-0.5 bg-slate-950 border border-slate-700 rounded text-[8px] font-label-caps text-slate-300">REST</span>
+<span class="px-1.5 py-0.5 bg-slate-950 border border-slate-700 rounded text-[8px] font-label-caps text-slate-300">Postgres</span>
+</div>
+</div>
+</div>
+<!-- Approval Gate Modal Overlay -->
+<div class="absolute inset-0 z-10 flex items-end justify-center pb-8 pointer-events-none">
+<div class="glass-panel w-11/12 max-w-lg p-4 rounded-xl shadow-[0_0_30px_rgba(99,102,241,0.2)] flex flex-col gap-3 pointer-events-auto animate-[slideUp_0.3s_ease-out]">
+<div class="flex items-start justify-between">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-electric-indigo" data-icon="gavel">gavel</span>
+<h3 class="text-headline-md font-headline-md text-on-surface text-lg">Architect Review Complete</h3>
+</div>
+<span class="px-2 py-0.5 bg-emerald-ship/20 text-emerald-ship border border-emerald-ship/30 rounded text-label-caps font-label-caps">Ready</span>
+</div>
+<p class="text-body-md font-body-md text-slate-300">The architecture plan has been drafted. Review the flowchart above. Do you want to proceed to code generation?</p>
+<div class="flex justify-end gap-2 mt-2">
+<button class="px-4 py-2 border border-slate-600 rounded text-label-caps font-label-caps text-slate-300 hover:bg-slate-800 transition-colors">
+                                    Reject &amp; Edit
+                                </button>
+<button class="px-4 py-2 bg-electric-indigo text-white rounded text-label-caps font-label-caps font-bold shadow-[0_0_12px_rgba(99,102,241,0.4)] hover:bg-indigo-400 transition-colors flex items-center gap-2">
+<span class="material-symbols-outlined text-sm" data-icon="done_all">done_all</span> Approve &amp; Generate
+                                </button>
+</div>
+</div>
+</div>
+</div>
+<!-- Telemetry Accordion (Bottom Docked) -->
+<div class="border-t border-slate-700 bg-slate-950 h-32 flex flex-col">
+<div class="px-3 py-1.5 border-b border-slate-700 flex justify-between items-center bg-slate-900">
+<span class="text-label-caps font-label-caps text-slate-400 flex items-center gap-1">
+<span class="material-symbols-outlined text-xs" data-icon="terminal">terminal</span> Live Telemetry
+                        </span>
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-secondary animate-pulse"></span>
+<span class="text-label-caps font-label-caps text-slate-500">Connected</span>
+<button class="text-slate-500 hover:text-slate-300"><span class="material-symbols-outlined text-xs" data-icon="expand_less">expand_less</span></button>
+</div>
+</div>
+<div class="flex-1 p-2 overflow-y-auto font-code-sm text-code-sm text-slate-400 space-y-1">
+<div class="flex gap-2"><span class="text-slate-500">[10:42:01]</span><span class="text-electric-indigo">[SYSTEM]</span><span>Pipeline initialized. Pass 1 started.</span></div>
+<div class="flex gap-2"><span class="text-slate-500">[10:42:05]</span><span class="text-secondary">[AGENT_ARCH]</span><span>Parsing user prompt...</span></div>
+<div class="flex gap-2"><span class="text-slate-500">[10:42:12]</span><span class="text-secondary">[AGENT_ARCH]</span><span>Generating service definitions.</span></div>
+<div class="flex gap-2"><span class="text-slate-500">[10:42:45]</span><span class="text-secondary">[AGENT_ARCH]</span><span>Diagram rendered. Awaiting user approval.</span></div>
+<div class="flex gap-2"><span class="text-slate-500">[10:43:00]</span><span class="text-amber-warning">[GATE]</span><span>Execution paused at Approval Gate.</span></div>
+</div>
+</div>
+</section>
+</div>
+</main>
+<style>
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</body></html>

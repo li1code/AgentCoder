@@ -1,0 +1,60 @@
+import { NextRequest, NextResponse } from 'next/server';
+import fs from 'fs';
+import path from 'path';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
+import { flushVfsToDisk } from '@/lib/agents/ruflo/vfs';
+import { getAuthenticatedSession, verifyConversationOwnership } from '@/lib/auth';
+
+const execFilePromise = promisify(execFile);
+
+export async function GET(
+  request: NextRequest,
+  context: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = await getAuthenticatedSession(request);
+    const { id } = await context.params;
+    const access = await verifyConversationOwnership(id, session);
+    if (!access.authorized) {
+      return NextResponse.json({ error: access.error }, { status: access.status });
+    }
+
+    // Flush any in-memory/database virtual files to disk before creating zip archive
+    await flushVfsToDisk(id);
+
+    const projectDir = path.join(process.cwd(), 'projects', id);
+
+    if (!fs.existsSync(projectDir)) {
+      return NextResponse.json({ error: 'Project folder not found' }, { status: 404 });
+    }
+
+    const tempZipPath = path.join(process.cwd(), 'projects', `${id}.zip`);
+    
+    if (fs.existsSync(tempZipPath)) {
+      fs.unlinkSync(tempZipPath);
+    }
+
+    // Run system zip safely via execFile without shell interpretation
+    await execFilePromise('zip', ['-r', tempZipPath, '.'], { cwd: projectDir });
+
+    if (!fs.existsSync(tempZipPath)) {
+      return NextResponse.json({ error: 'Failed to package files' }, { status: 500 });
+    }
+
+    const fileBuffer = fs.readFileSync(tempZipPath);
+    fs.unlinkSync(tempZipPath);
+
+    return new Response(fileBuffer, {
+      headers: {
+        'Content-Type': 'application/zip',
+        'Content-Disposition': `attachment; filename="autocoder-project-${id}.zip"`,
+      },
+    });
+  } catch (err: any) {
+    const errorMsg = err.code === 'ENOENT'
+      ? 'System "zip" utility is not installed on the host environment. Please install zip to download projects as archives.'
+      : err.message;
+    return NextResponse.json({ error: errorMsg }, { status: 500 });
+  }
+}

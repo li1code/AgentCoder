@@ -1,0 +1,777 @@
+import { prisma } from '../db';
+
+// Ensure localhost bypasses any system proxies so Ollama connections aren't intercepted by environment proxies
+delete process.env.HTTP_PROXY;
+delete process.env.http_proxy;
+delete process.env.HTTPS_PROXY;
+delete process.env.https_proxy;
+process.env.no_proxy = '*';
+process.env.NO_PROXY = '*';
+
+const undici = typeof window === 'undefined' ? require('undici') : null;
+const undiciAgent = undici ? undici.Agent : null;
+const undiciFetch = undici ? undici.fetch : fetch;
+
+// Direct unproxied dispatcher specifically for local loopback connections
+export const directAgent = undiciAgent ? new undiciAgent({
+  connect: { timeout: 5000 },
+}) : null;
+
+// Reusable Undici Agent with a 400-hour timeout (1,440,000,000 ms, cached globally)
+const globalForAgent = global as unknown as { ollamaAgent: any };
+const longTimeoutDispatcher = globalForAgent.ollamaAgent ?? (undiciAgent ? new undiciAgent({
+  connect: { timeout: 1440000000 },
+  connectTimeout: 1440000000,   // 400 hours connect timeout
+  headersTimeout: 1440000000,   // 400 hours in ms
+  bodyTimeout: 1440000000,      // 400 hours in ms
+  keepAliveTimeout: 1440000000, // 400 hours in ms
+  keepAliveMaxTimeout: 1440000000,
+}) : null);
+if (process.env.NODE_ENV !== 'production' && typeof window === 'undefined') {
+  globalForAgent.ollamaAgent = longTimeoutDispatcher;
+}
+
+interface Message {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+}
+
+interface InferenceOptions {
+  model?: string;
+  temperature?: number;
+  format?: 'json' | 'text';
+  maxTokens?: number;
+  timeoutMs?: number;
+  signal?: AbortSignal;
+  onChunk?: (text: string) => void;
+}
+
+import fs from 'fs';
+import path from 'path';
+
+// Settings helper
+export async function getLLMConfig() {
+  const defaults = {
+    provider: process.env.LLM_PROVIDER || 'ollama', // 'ollama' | 'openai' | 'anthropic'
+    ollamaHost: process.env.OLLAMA_HOST || 'http://127.0.0.1:11434',
+    ollamaModel: process.env.OLLAMA_MODEL || 'llama3:8b-instruct',
+    openaiApiKey: process.env.OPENAI_API_KEY || '',
+    openaiModel: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+    anthropicApiKey: process.env.ANTHROPIC_API_KEY || '',
+    anthropicModel: process.env.ANTHROPIC_MODEL || 'claude-3-5-sonnet-20241022',
+  };
+
+  const settingsPath = path.join(process.cwd(), 'settings.json');
+  let config = { ...defaults };
+  if (fs.existsSync(settingsPath)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+      config = { ...defaults, ...data };
+    } catch (e) {
+      console.error('Error reading settings.json, using defaults:', e);
+    }
+  }
+
+  // Model fallback check: verify if the configured model is installed
+  if (config.provider === 'ollama') {
+    const hostsToTry = Array.from(new Set([
+      config.ollamaHost,
+      'http://127.0.0.1:11434',
+      'http://localhost:11434',
+      'http://0.0.0.0:11434',
+    ]));
+
+    for (const h of hostsToTry) {
+      try {
+        const res = await undiciFetch(`${h}/api/tags`, {
+          method: 'GET',
+          cache: 'no-store',
+          signal: AbortSignal.timeout(3000),
+          ...(longTimeoutDispatcher ? { dispatcher: longTimeoutDispatcher } : {} as any),
+        });
+        if (res.ok) {
+          config.ollamaHost = h;
+          const data = await res.json();
+          if (data && Array.isArray(data.models) && data.models.length > 0) {
+            const installedModelNames = data.models.map((m: any) => m.name);
+            if (!installedModelNames.includes(config.ollamaModel)) {
+              // Configured model not found, fallback to the first installed model
+              config.ollamaModel = installedModelNames[0];
+            }
+          }
+          break;
+        }
+      } catch (e) {
+        // Endpoint is offline on this host, try fallback
+      }
+    }
+  }
+
+  return config;
+}
+
+export async function checkOllamaConnection(host: string): Promise<boolean> {
+  delete process.env.HTTP_PROXY;
+  delete process.env.http_proxy;
+  delete process.env.HTTPS_PROXY;
+  delete process.env.https_proxy;
+  process.env.no_proxy = '*';
+  process.env.NO_PROXY = '*';
+
+  const hostsToTry = Array.from(new Set([
+    host,
+    'http://127.0.0.1:11434',
+    'http://localhost:11434',
+    'http://0.0.0.0:11434',
+  ]));
+
+  for (const h of hostsToTry) {
+    try {
+      const res = await undiciFetch(`${h}/api/tags`, {
+        method: 'GET',
+        cache: 'no-store',
+        signal: AbortSignal.timeout(5000),
+        ...(directAgent ? { dispatcher: directAgent } : {} as any),
+      });
+      if (res.ok) return true;
+    } catch (e) {
+      // Continue to next host attempt
+    }
+  }
+  return false;
+}
+
+export function cleanJsonResponse(text: string): string {
+  let cleaned = text.trim();
+  cleaned = cleaned.replace(/^```(?:json)?\n?/i, '').replace(/\n?```$/i, '');
+  return cleaned.trim();
+}
+
+export async function runInference(
+  messages: Message[],
+  options: InferenceOptions = {}
+): Promise<string> {
+  // Ensure loopback bypasses any system environment proxies
+  delete process.env.HTTP_PROXY;
+  delete process.env.http_proxy;
+  delete process.env.HTTPS_PROXY;
+  delete process.env.https_proxy;
+  process.env.no_proxy = '*';
+  process.env.NO_PROXY = '*';
+
+  if (process.env.MOCK_INFERENCE === 'true') {
+    const sysPrompt = messages.find(m => m.role === 'system')?.content || '';
+    if (sysPrompt.includes('You are the Queen Agent')) {
+      return JSON.stringify({
+        contextType: "canonical",
+        mvpId: "MVP-001",
+        projectName: "Todo App",
+        problemStatement: "Manage tasks efficiently",
+        projectDescription: "A robust task list app",
+        projectGoal: "Provide CRUD operations for tasks",
+        mvpScope: {
+          included: ["Add Task", "Delete Task", "View Tasks"],
+          excluded: ["Collaborative editing", "Push notifications"]
+        },
+        constraints: ["SQLite only", "Local execution"],
+        risks: ["Data corruption if disk full"],
+        agentInstructions: {
+          planner: "Map tasks",
+          architect: "Design structure",
+          system: "Design DB tables",
+          designer: "Create layout",
+          reviewer: "Review specs",
+          coder: "Write code",
+          tester: "Write tests",
+          debugger: "Debug errors",
+          security: "Audit vulnerabilities",
+          refiner: "Refine output"
+        }
+      });
+    }
+    if (sysPrompt.includes('You are the Planner Agent')) {
+      return JSON.stringify({
+        contextType: "canonical",
+        projectName: "Todo App",
+        mvpReference: "MVP-001",
+        recommendedTechStack: {
+          frontend: "react",
+          backend: "express",
+          database: "sqlite",
+          authentication: "none",
+          deployment: "local",
+          additionalTechnologies: []
+        },
+        features: [
+          {
+            id: "Feature-001",
+            mvpReference: "MVP-001",
+            name: "Add Task",
+            description: "User can type task and add it",
+            priority: "Critical"
+          }
+        ],
+        functionalRequirements: ["Support adding tasks"],
+        nonFunctionalRequirements: {
+          security: ["None"],
+          performance: ["Fast response"],
+          scalability: ["Single user scale"],
+          usability: ["Simple input"],
+          maintainability: ["Clean components"],
+          accessibility: ["Accessible elements"],
+          reliability: ["Local storage persist"]
+        },
+        deliverables: ["TodoPage component"],
+        agentInstructions: {
+          architect: "Map TodoPage",
+          system: "Design task schema",
+          designer: "Map UI props",
+          coder: "Synthesize page",
+          tester: "Verify tasks add",
+          debugger: "Fix index errors",
+          security: "Sanitize inputs"
+        }
+      });
+    }
+    if (sysPrompt.includes('You are the Architect Agent')) {
+      return JSON.stringify({
+        contextType: "canonical",
+        projectName: "Todo App",
+        mvpReference: "MVP-001",
+        architectureStyle: "layered",
+        projectStructure: {
+          root: "src",
+          directories: ["pages", "components"],
+          files: [
+            { path: "src/pages/TodoPage.tsx", module: "Module-001" },
+            { path: "src/components/TodoItem.tsx", module: "Module-001" }
+          ]
+        },
+        modules: [
+          {
+            id: "Module-001",
+            name: "TodoModule",
+            purpose: "CRUD for tasks",
+            supportsFeatures: ["Feature-001"],
+            directories: ["src/pages", "src/components"],
+            files: ["src/pages/TodoPage.tsx", "src/components/TodoItem.tsx"],
+            dependsOn: [],
+            usedBy: []
+          }
+        ],
+        sharedResources: {
+          configuration: [],
+          constants: [],
+          types: [],
+          utilities: [],
+          middleware: [],
+          assets: [],
+          environment: [],
+          others: []
+        },
+        projectConventions: {
+          namingConvention: "camelCase",
+          folderConvention: "lowercase",
+          codingConvention: "standard",
+          importConvention: "absolute"
+        }
+      });
+    }
+    if (sysPrompt.includes('You are the System Agent')) {
+      return JSON.stringify({
+        contextType: "canonical",
+        projectName: "Todo App",
+        mvpReference: "MVP-001",
+        database: {
+          type: "sqlite",
+          entities: [
+            {
+              id: "Entity-001",
+              name: "Task",
+              purpose: "Stores todo items",
+              fields: ["id: string", "title: string"],
+              relationships: [],
+              indexes: [],
+              constraints: []
+            }
+          ]
+        },
+        apis: [
+          {
+            id: "API-001",
+            name: "addTodo",
+            method: "POST",
+            route: "/api/todos",
+            purpose: "Creates tasks",
+            featureId: "Feature-001",
+            request: {},
+            response: {},
+            middleware: []
+          }
+        ],
+        routing: {
+          routerStructure: [
+            { apiId: "API-001", path: "/api/todos" }
+          ],
+          routeGroups: []
+        },
+        middleware: [],
+        services: [
+          { id: "Service-001", name: "TodoService", purpose: "Handles tasks persistence", usedByApis: ["API-001"] }
+        ],
+        configuration: {
+          environmentVariables: [],
+          storage: [],
+          cache: [],
+          externalServices: [],
+          authentication: [],
+          authorization: [],
+          others: []
+        },
+        backendRules: {
+          validationRules: [],
+          businessRules: [],
+          errorHandling: [],
+          securityPolicies: []
+        }
+      });
+    }
+    if (sysPrompt.includes('You are the Designer Agent')) {
+      return JSON.stringify({
+        contextType: "canonical",
+        projectName: "Todo App",
+        mvpReference: "MVP-001",
+        designPhilosophy: {
+          theme: "dark",
+          designPrinciples: ["Simple", "Clean"],
+          targetExperience: "Smooth task additions",
+          brandingGuidelines: []
+        },
+        navigation: {
+          primaryNavigation: [],
+          secondaryNavigation: [],
+          userFlows: []
+        },
+        pages: [
+          {
+            id: "Page-Login",
+            name: "TodoPage",
+            purpose: "Manage tasks layout",
+            layout: "standard",
+            supportsFeature: "Feature-001",
+            components: ["Component-001"]
+          }
+        ],
+        components: [
+          {
+            id: "Component-001",
+            name: "TodoItem",
+            purpose: "List task line view",
+            pageId: "Page-Login",
+            variants: [],
+            states: []
+          }
+        ],
+        designSystem: {
+          colors: ["bg-slate-900"],
+          typography: [],
+          spacing: [],
+          icons: [],
+          animations: [],
+          responsiveBreakpoints: [],
+          elevation: [],
+          borders: []
+        },
+        accessibility: {
+          standards: [],
+          requirements: []
+        },
+        interactionGuidelines: {
+          feedback: [],
+          transitions: [],
+          errorStates: [],
+          loadingStates: []
+        }
+      });
+    }
+    if (sysPrompt.includes('Blueprinter in a strict')) {
+      return JSON.stringify({
+        blueprints: [
+          {
+            file: "src/pages/TodoPage.tsx",
+            purpose: "Render tasks list",
+            imports: [],
+            exports: ["TodoPage"],
+            dependencies: [],
+            interfaces: [],
+            functions: ["render"],
+            apiUsage: [],
+            componentRelationships: [],
+            acceptanceCriteria: []
+          }
+        ]
+      });
+    }
+    if (sysPrompt.includes('You are the Coder Agent')) {
+      return JSON.stringify({
+        contextType: "canonical",
+        projectName: "Todo App",
+        mvpReference: "MVP-001",
+        generatedFiles: [
+          {
+            path: "src/pages/TodoPage.tsx",
+            architectFileId: "src/pages/TodoPage.tsx",
+            module: "Module-001",
+            implementsFeatures: ["Feature-001"],
+            type: "page",
+            language: "tsx",
+            content: "export function TodoPage() { return <div>Todo Page</div>; }"
+          }
+        ],
+        generationSummary: {
+          filesGenerated: 1,
+          filesSkipped: [],
+          conflicts: [],
+          warnings: [],
+          status: "Success"
+        }
+      });
+    }
+    if (sysPrompt.includes('You are the Tester Agent')) {
+      return JSON.stringify({
+        contextType: "canonical",
+        projectName: "Todo App",
+        mvpReference: "MVP-001",
+        generatedTestFiles: [
+          {
+            id: "Test-001",
+            path: "src/__tests__/TodoPage.test.tsx",
+            targetFile: "src/pages/TodoPage.tsx",
+            coversFeature: "Feature-001",
+            type: "unit",
+            language: "tsx",
+            content: "describe('TodoPage', () => {})"
+          }
+        ],
+        testReport: {
+          summary: {
+            totalTests: 1,
+            passed: 1,
+            failed: 0,
+            skipped: 0,
+            coverage: "100%",
+            coveredFeatures: ["Feature-001"],
+            missingFeatures: []
+          },
+          defects: [],
+          warnings: [],
+          status: "Success"
+        }
+      });
+    }
+    if (sysPrompt.includes('You are the Debugger Agent')) {
+      return JSON.stringify({
+        contextType: "canonical",
+        projectName: "Todo App",
+        mvpReference: "MVP-001",
+        debugReport: {
+          issues: [],
+          summary: {
+            issuesDetected: 0,
+            issuesResolved: 0,
+            remainingIssues: 0
+          },
+          warnings: [],
+          status: "Success"
+        }
+      });
+    }
+    if (sysPrompt.includes('You are the Security Agent')) {
+      return JSON.stringify({
+        contextType: "canonical",
+        projectName: "Todo App",
+        mvpReference: "MVP-001",
+        securityReport: {
+          issues: [],
+          summary: {
+            critical: 0,
+            high: 0,
+            medium: 0,
+            low: 0,
+            informational: 0
+          },
+          warnings: [],
+          status: "Success"
+        }
+      });
+    }
+    if (sysPrompt.includes('Reviewer agent in a')) {
+      return JSON.stringify({
+        qualityScore: 95,
+        annotations: []
+      });
+    }
+    throw new Error(`UAT Mock Inference: unknown agent prompt matching: ${sysPrompt.slice(0, 100)}`);
+  }
+
+function combineAbortSignals(...signals: AbortSignal[]): AbortSignal {
+  const controller = new AbortController();
+  for (const sig of signals) {
+    if (!sig) continue;
+    if (sig.aborted) { controller.abort(sig.reason); return controller.signal; }
+    sig.addEventListener('abort', () => controller.abort(sig.reason), { once: true });
+  }
+  return controller.signal;
+}
+
+  const config = await getLLMConfig();
+  const temp = options.temperature ?? 0.2;
+  const isJson = options.format === 'json';
+
+  // Combine client abort signal with timeout signal (400 hours / 1,440,000s)
+  const startTime = Date.now();
+  if (options.model) {
+    if (config.provider === 'ollama') config.ollamaModel = options.model;
+    else if (config.provider === 'openai') config.openaiModel = options.model;
+    else if (config.provider === 'anthropic') config.anthropicModel = options.model;
+  }
+
+  const effectiveTimeout = options.timeoutMs ? Math.max(options.timeoutMs, 600_000) : 1440000000; // Minimum 10 minutes timeout for inference operations
+  const timeoutSignal = typeof AbortSignal.timeout === 'function'
+    ? AbortSignal.timeout(effectiveTimeout)
+    : (() => { const c = new AbortController(); setTimeout(() => c.abort(), effectiveTimeout); return c.signal; })();
+  const combinedSignal: AbortSignal = options.signal ? combineAbortSignals(options.signal, timeoutSignal) : timeoutSignal;
+
+  let result = '';
+
+  if (config.provider === 'ollama') {
+    const host = config.ollamaHost;
+    const isAlive = await checkOllamaConnection(host);
+    if (!isAlive) {
+      throw new Error(`Ollama is not running at ${host}. Please start Ollama before executing.`);
+    }
+
+    const payload: any = {
+      model: config.ollamaModel,
+      messages: messages,
+      keep_alive: -1, // Force Ollama to keep model loaded in VRAM permanently during pipeline run!
+      options: {
+        temperature: temp,
+        num_ctx: (() => {
+          const promptChars = messages.reduce((sum, m) => sum + (m.content || '').length, 0);
+          const needed = Math.ceil(promptChars / 4) + (options.maxTokens || 4096) + 512;
+          return Math.min(131072, Math.max(32768, needed));
+        })(),
+      },
+      stream: true,
+    };
+
+    if (options.maxTokens) {
+      payload.options.num_predict = options.maxTokens;
+    }
+
+    if (isJson) {
+      payload.format = 'json';
+    }
+
+    let res: any;
+    try {
+      res = await undiciFetch(`${host}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
+        body: JSON.stringify(payload),
+        signal: combinedSignal,
+        ...(longTimeoutDispatcher ? { dispatcher: longTimeoutDispatcher } : {} as any),
+      });
+    } catch (fetchErr: any) {
+      if (fetchErr.message?.includes('fetch failed')) {
+        console.warn('[Inference] Transient fetch error, retrying Ollama request in 1.5s...');
+        await new Promise(r => setTimeout(r, 1500));
+        res = await undiciFetch(`${host}/api/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          cache: 'no-store',
+          body: JSON.stringify(payload),
+          signal: combinedSignal,
+          ...(longTimeoutDispatcher ? { dispatcher: longTimeoutDispatcher } : {} as any),
+        });
+      } else {
+        throw fetchErr;
+      }
+    }
+
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`Ollama inference failed: ${res.statusText} - ${errText}`);
+    }
+
+    const reader = res.body?.getReader();
+    const decoder = new TextDecoder();
+    let accumulatedContent = '';
+
+    if (reader) {
+      try {
+        let buffer = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          // Save the last line if it is incomplete
+          buffer = lines.pop() || '';
+          
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            try {
+              const parsed = JSON.parse(line);
+              const content = parsed.message?.content || '';
+              accumulatedContent += content;
+              if (options.onChunk && content) {
+                options.onChunk(content);
+              }
+            } catch (e) {
+              // Ignore partial JSON errors
+            }
+          }
+        }
+        // Parse any remaining buffer content
+        if (buffer.trim()) {
+          try {
+            const parsed = JSON.parse(buffer);
+            const content = parsed.message?.content || '';
+            accumulatedContent += content;
+            if (options.onChunk && content) {
+              options.onChunk(content);
+            }
+          } catch (e) {}
+        }
+      } finally {
+        reader.releaseLock();
+      }
+      result = accumulatedContent;
+    } else {
+      const data = (await res.json()) as any;
+      result = data.message.content;
+    }
+  } else if (config.provider === 'openai') {
+    if (!config.openaiApiKey) {
+      throw new Error('OpenAI API Key is not configured.');
+    }
+
+    const payload: any = {
+      model: config.openaiModel,
+      messages: messages,
+      temperature: temp,
+    };
+
+    if (options.maxTokens) {
+      payload.max_tokens = options.maxTokens;
+    }
+
+    if (isJson) {
+      payload.response_format = { type: 'json_object' };
+    }
+
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${config.openaiApiKey}`,
+      },
+      body: JSON.stringify(payload),
+      signal: combinedSignal,
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`OpenAI API failed: ${res.statusText} - ${errText}`);
+    }
+
+    const data = await res.json();
+    result = data.choices[0].message.content;
+  } else if (config.provider === 'anthropic') {
+    if (!config.anthropicApiKey) {
+      throw new Error('Anthropic API Key is not configured.');
+    }
+
+    // Split system prompt from messages for Anthropic
+    const systemMessage = messages.find((m) => m.role === 'system');
+    const userMessages = messages.filter((m) => m.role !== 'system');
+
+    const payload: any = {
+      model: config.anthropicModel,
+      messages: userMessages.map((m) => ({
+        role: m.role === 'assistant' ? 'assistant' : 'user',
+        content: m.content,
+      })),
+      max_tokens: options.maxTokens ?? 4096,
+      temperature: temp,
+    };
+
+    if (systemMessage) {
+      payload.system = systemMessage.content;
+    }
+
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': config.anthropicApiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify(payload),
+      signal: combinedSignal,
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`Anthropic API failed: ${res.statusText} - ${errText}`);
+    }
+
+    const data = await res.json();
+    result = data.content[0].text;
+  } else {
+    throw new Error(`Unsupported LLM provider: ${config.provider}`);
+  }
+
+  const durationMs = Date.now() - startTime;
+  const resolvedModel = config.provider === 'ollama' ? config.ollamaModel : (config.provider === 'openai' ? config.openaiModel : config.anthropicModel);
+  console.log('[InferenceTrace]', JSON.stringify({
+    provider: config.provider,
+    requestedModel: options.model || resolvedModel,
+    resolvedModel,
+    durationMs,
+    outputLength: result.length,
+    timestamp: new Date().toISOString(),
+  }));
+
+  return result;
+}
+
+let ollamaHeartbeatTimer: NodeJS.Timeout | null = null;
+
+export function startOllamaKeepAlive(host: string = 'http://127.0.0.1:11434') {
+  if (ollamaHeartbeatTimer) return;
+
+  // Active Keep-Alive Heartbeat Daemon: Pings Ollama every 10s to keep TCP socket & process active
+  ollamaHeartbeatTimer = setInterval(async () => {
+    try {
+      await undiciFetch(`${host}/api/version`, {
+        method: 'GET',
+        signal: AbortSignal.timeout(3000),
+        ...(longTimeoutDispatcher ? { dispatcher: longTimeoutDispatcher } : {} as any),
+      });
+    } catch (e) {
+      // Ignore transient ping errors
+    }
+  }, 10000);
+}
+
+export function stopOllamaKeepAlive() {
+  if (ollamaHeartbeatTimer) {
+    clearInterval(ollamaHeartbeatTimer);
+    ollamaHeartbeatTimer = null;
+  }
+}
+

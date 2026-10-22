@@ -1,0 +1,1576 @@
+import assert from 'node:assert';
+import { extractProjectContract, validateProjectContract, validateArchitectureArtifact, detectExplicitNoAuth, detectExplicitAuthRequired, parseArchitectureModules } from '../spec-contract';
+import { validateFrameworkBoundaries } from '../framework-validator';
+import { validateReactHookImports, ProjectValidationError } from '../project-validator';
+import { probeGeneratedProjectRoutes } from '../runtime-validator';
+import { validateApiContracts } from '../api-contract-validator';
+import { syncHtmlAssetLinks, validateBlueprintGraph, validateArchitectOutput, composeAgentUserContent, shouldPersistAgentOutput } from '../orchestrator';
+
+export async function runKanbanContractTests(): Promise<void> {
+  // Test A: Exact Kanban authentication contradiction
+  const contractA = extractProjectContract({
+    'plan.md': '',
+    'requirements.md': '',
+    'architecture.md': `
+### Tech Stack
+- **Frontend**: React
+- **Frontend Entry Point**: src/pages/index.tsx
+- **Backend**: Express
+- **Database**: PostgreSQL
+- **Authentication**: None — no auth needed
+- **Build Tool**: Webpack
+`,
+    'backend_spec.md': `
+### API Endpoints
+**GET /api/boards** — Fetch all boards
+- Request Body: None
+- Auth Required: Yes
+
+### Middleware
+**AuthMiddleware**
+- Purpose: Authenticates incoming requests
+`,
+    'ui_spec.md': '',
+  });
+
+  const resA = validateProjectContract(contractA);
+  assert.strictEqual(resA.valid, false, 'Expected Kanban contradiction to fail contract validation');
+  assert.ok(
+    resA.errors.some((e) => e.toLowerCase().includes('authentication contradiction')),
+    'Expected authentication contradiction error message'
+  );
+
+  // Test B: Coherent no-auth project
+  const contractB = extractProjectContract({
+    'plan.md': 'Project without authentication',
+    'requirements.md': 'Public board management',
+    'architecture.md': 'Authentication: None — no auth needed',
+    'backend_spec.md': 'GET /api/boards\n- Auth Required: No',
+    'ui_spec.md': '',
+  });
+  const resB = validateProjectContract(contractB);
+  assert.strictEqual(resB.valid, true, 'Expected coherent no-auth contract to pass');
+  assert.strictEqual(contractB.authentication.required, false, 'Expected auth.required to be false');
+
+  // Test C: Coherent auth project
+  const contractC = extractProjectContract({
+    'plan.md': 'User authentication required',
+    'requirements.md': 'User signin',
+    'architecture.md': 'Authentication: JWT',
+    'backend_spec.md': 'GET /api/boards\n- Auth Required: Yes\nAuthMiddleware',
+    'ui_spec.md': '',
+  });
+  assert.strictEqual(contractC.authentication.required, true, 'Expected auth.required to be true');
+
+  // Test D: Detects REACT_WEBPACK_SPA & entry point
+  const contractD = extractProjectContract({
+    'plan.md': '',
+    'requirements.md': '',
+    'architecture.md': `
+Frontend: React
+Build Tool: Webpack
+Frontend Entry Point: src/pages/index.tsx
+`,
+    'backend_spec.md': '',
+    'ui_spec.md': '',
+  });
+  assert.strictEqual(contractD.framework, 'REACT_WEBPACK_SPA', 'Expected framework to be REACT_WEBPACK_SPA');
+  assert.ok(contractD.entryPoints.includes('src/pages/index.tsx'), 'Expected entry point src/pages/index.tsx');
+
+  // Test E: Prisma ORM alone does not imply SQLite
+  const contractE = extractProjectContract({
+    'plan.md': '',
+    'requirements.md': '',
+    'architecture.md': 'ORM: Prisma',
+    'backend_spec.md': '',
+    'ui_spec.md': '',
+  });
+  assert.strictEqual(contractE.orm, 'prisma', 'Expected ORM to be prisma');
+  assert.strictEqual(contractE.database, 'none', 'Expected database to be none when unmentioned');
+
+  // Test F: PostgreSQL database preference is preserved
+  const contractF = extractProjectContract({
+    'plan.md': '',
+    'requirements.md': '',
+    'architecture.md': 'Database: PostgreSQL\nORM: Prisma',
+    'backend_spec.md': '',
+    'ui_spec.md': '',
+  });
+  assert.strictEqual(contractF.database, 'postgresql', 'Expected database to be postgresql');
+
+  // Test G: Express backend without server entry point triggers topology contradiction
+  const contractG = extractProjectContract({
+    'plan.md': '',
+    'requirements.md': '',
+    'architecture.md': `
+### Tech Stack
+- Backend: Express
+
+### Modules
+**Backend API Service**
+- Responsibility: REST API
+- Owned Files: src/services/apiClient.ts
+`,
+    'backend_spec.md': 'GET /api/boards',
+    'ui_spec.md': '',
+  });
+  const resG = validateProjectContract(contractG);
+  assert.strictEqual(resG.valid, false, 'Expected Express topology error');
+  assert.ok(
+    resG.errors.some((e) => e.toLowerCase().includes('backend topology contradiction')),
+    'Expected backend topology contradiction error message'
+  );
+
+  // Test H: Exact historical backend ownership (apiClient.ts and types/index.ts)
+  const contractH = extractProjectContract({
+    'plan.md': '',
+    'requirements.md': '',
+    'architecture.md': `
+### Tech Stack
+- Backend: Express
+
+### Modules
+**Backend API Service**
+- Responsibility: REST API
+- Owned Files: src/services/apiClient.ts, src/types/index.ts
+`,
+    'backend_spec.md': 'GET /api/boards',
+    'ui_spec.md': '',
+  });
+  const resH = validateProjectContract(contractH);
+  assert.strictEqual(resH.valid, false, 'Expected historical Express topology error (only client/shared files)');
+  assert.ok(
+    resH.errors.some((e) => e.toLowerCase().includes('backend topology contradiction')),
+    'Expected backend topology contradiction error message for Test H'
+  );
+
+  // Test I: Valid Express topology with server entry
+  const contractI = extractProjectContract({
+    'plan.md': '',
+    'requirements.md': '',
+    'architecture.md': `
+### Tech Stack
+- Backend: Express
+- Backend Entry Point: server/index.ts
+
+### Modules
+**Backend API Service**
+- Responsibility: REST API
+- Owned Files: server/index.ts, server/routes/boards.ts
+`,
+    'backend_spec.md': 'GET /api/boards',
+    'ui_spec.md': '',
+  });
+  const resI = validateProjectContract(contractI);
+  assert.strictEqual(resI.valid, true, 'Expected valid Express topology with server entry to pass');
+
+  // Test J: Raw TSX in React/Webpack HTML
+  const resJ = validateFrameworkBoundaries(
+    {
+      'public/index.html': '<div id="root"></div><script src="src/pages/index.tsx"></script>',
+      'webpack.config.js': 'module.exports = {};',
+    },
+    'REACT_WEBPACK_SPA'
+  );
+  assert.strictEqual(resJ.valid, false, 'Expected raw TSX script tag in HTML to fail framework validation');
+
+  // Test K: Valid Webpack HTML
+  const resK = validateFrameworkBoundaries(
+    {
+      'public/index.html': '<div id="root"></div><script defer src="/bundle.js"></script>',
+      'webpack.config.js': 'module.exports = {};',
+    },
+    'REACT_WEBPACK_SPA'
+  );
+  assert.strictEqual(resK.valid, true, 'Expected valid Webpack HTML to pass framework validation');
+
+  // Test L: Duplicate scripts in HTML
+  const resL = validateFrameworkBoundaries(
+    {
+      'public/index.html': '<div id="root"></div><script src="/bundle.js"></script><script src="/bundle.js"></script>',
+      'webpack.config.js': 'module.exports = {};',
+    },
+    'REACT_WEBPACK_SPA'
+  );
+  assert.strictEqual(resL.valid, false, 'Expected duplicate scripts in HTML to fail framework validation');
+
+  // Test M: Missing hook import
+  const errorsM: ProjectValidationError[] = [];
+  validateReactHookImports(
+    'src/components/Column.tsx',
+    'export function Column() { const [state, setState] = useState(0); return <div>{state}</div>; }',
+    errorsM
+  );
+  assert.strictEqual(errorsM.length, 1, 'Expected unimported useState hook to produce error');
+
+  // Test N: Valid hook import
+  const errorsN: ProjectValidationError[] = [];
+  validateReactHookImports(
+    'src/components/Column.tsx',
+    'import { useState } from "react"; export function Column() { const [state, setState] = useState(0); return <div>{state}</div>; }',
+    errorsN
+  );
+  assert.strictEqual(errorsN.length, 0, 'Expected imported useState hook to produce 0 errors');
+
+  // Test O: React/Webpack runtime entry in probeGeneratedProjectRoutes
+  const contractO = extractProjectContract({
+    'plan.md': '',
+    'requirements.md': '',
+    'architecture.md': `
+Frontend: React
+Build Tool: Webpack
+Frontend Entry Point: src/pages/index.tsx
+`,
+    'backend_spec.md': '',
+    'ui_spec.md': '',
+  });
+  const resO = probeGeneratedProjectRoutes(contractO, {
+    'src/pages/index.tsx': 'console.log("App root");',
+    'webpack.config.js': 'module.exports = {};',
+    'public/index.html': '<div id="root"></div>',
+  });
+  resO.then((result) => {
+    assert.strictEqual(result.success, true, 'Expected React/Webpack entry probing to succeed');
+  });
+
+  // Test P: Missing declared entry in probeGeneratedProjectRoutes
+  const contractP = extractProjectContract({
+    'plan.md': '',
+    'requirements.md': '',
+    'architecture.md': `
+Frontend: React
+Build Tool: Webpack
+Frontend Entry Point: src/pages/index.tsx
+`,
+    'backend_spec.md': '',
+    'ui_spec.md': '',
+  });
+  const resP = probeGeneratedProjectRoutes(contractP, {
+    'webpack.config.js': 'module.exports = {};',
+    'public/index.html': '<div id="root"></div>',
+  });
+  resP.then((result) => {
+    assert.strictEqual(result.success, false, 'Expected missing declared entry point to fail runtime probing');
+  });
+
+  // Test Q/R: Express API route registration detection
+  const resQR = validateApiContracts(
+    [{ method: 'GET', path: '/api/boards', authRequired: false, source: 'backend_spec.md' }],
+    {
+      'server/routes/boards.ts': 'app.get("/api/boards", (req, res) => res.json([]));',
+    }
+  );
+  assert.strictEqual(resQR.valid, true, 'Expected Express app.get("/api/boards") route registration to pass API contract validation');
+
+  // Test S: Exact historical index.html
+  const resS = validateFrameworkBoundaries(
+    {
+      'index.html': `
+<script src="src/components/Column.tsx"></script>
+<script src="src/components/KanbanBoard.tsx"></script>
+<script src="src/pages/index.tsx" defer></script>
+<script src="src/pages/index.tsx" defer></script>
+<script type="module" src="src/types/index.ts" defer></script>
+`,
+      'webpack.config.js': 'module.exports = {};',
+    },
+    'REACT_WEBPACK_SPA'
+  );
+  assert.strictEqual(resS.valid, false, 'Expected historical index.html to fail framework validation');
+  assert.ok(
+    resS.errors.some((e) => e.message.includes('Duplicate script reference')),
+    'Expected duplicate script error'
+  );
+  assert.ok(
+    resS.errors.some((e) => e.message.includes('must not directly execute source module')),
+    'Expected raw source module error'
+  );
+  assert.ok(
+    resS.errors.some((e) => e.message.includes('missing the React root container')),
+    'Expected missing React root container error'
+  );
+
+  // Test T: Full historical contract failure before Blueprinter/Coder
+  const contractT = extractProjectContract({
+    'plan.md': '',
+    'requirements.md': 'Kanban board application',
+    'architecture.md': `
+### Tech Stack
+- **Frontend**: React
+- **Frontend Entry Point**: src/pages/index.tsx
+- **Backend**: Express
+- **Database**: PostgreSQL
+- **Authentication**: None — no auth needed
+- **Build Tool**: Webpack
+`,
+    'backend_spec.md': `
+### API Endpoints
+**GET /api/boards** — Fetch all boards
+- Request Body: None
+- Auth Required: Yes
+`,
+    'ui_spec.md': '',
+  });
+  const resT = validateProjectContract(contractT);
+  assert.strictEqual(resT.valid, false, 'Expected full historical contract to fail spec validation');
+
+  // --- REGRESSION TESTS FOR FIX PLAN ---
+
+  // Regression 1: Generic session is not authentication
+  const contractReg1 = extractProjectContract({
+    'plan.md': 'Kanban app',
+    'requirements.md': "User's board state should persist across sessions.",
+    'architecture.md': 'Authentication: None — no auth needed',
+    'backend_spec.md': 'GET /api/boards\n- Auth Required: No',
+    'ui_spec.md': 'Auth/Session: None',
+  });
+  const resReg1 = validateProjectContract(contractReg1);
+  assert.strictEqual(contractReg1.authentication.required, false, 'Expected generic session to not set auth.required to true');
+  assert.strictEqual(resReg1.valid, true, 'Expected generic session wording to pass contract validation');
+
+  // Regression 2: Browser session is not authentication
+  const contractReg2 = extractProjectContract({
+    'plan.md': 'Kanban app',
+    'requirements.md': 'Restore state across browser sessions',
+    'architecture.md': 'Authentication: None',
+    'backend_spec.md': 'GET /api/boards\n- Auth Required: No',
+    'ui_spec.md': 'Auth/Session: None',
+  });
+  assert.strictEqual(contractReg2.authentication.required, false, 'Expected browser sessions to not set auth.required to true');
+
+  // Regression 3: Auth/Session: None is recognized as explicit no-auth
+  assert.strictEqual(detectExplicitNoAuth('Auth/Session: None'), true, 'Expected Auth/Session: None to match detectExplicitNoAuth');
+  assert.strictEqual(detectExplicitNoAuth('Authentication / Session: None'), true, 'Expected Authentication / Session: None to match detectExplicitNoAuth');
+
+  // Regression 4: Explicit login is authentication
+  assert.strictEqual(detectExplicitAuthRequired('Users must log in before accessing their board'), true, 'Expected log in to match detectExplicitAuthRequired');
+
+  // Regression 5: JWT is authentication
+  assert.strictEqual(detectExplicitAuthRequired('Authentication: JWT'), true, 'Expected JWT to match detectExplicitAuthRequired');
+
+  // Regression 6: Genuine contradiction still fails
+  const contractReg6 = extractProjectContract({
+    'plan.md': '',
+    'requirements.md': 'Users must log in before accessing their board',
+    'architecture.md': 'Authentication: None — no auth needed',
+    'backend_spec.md': 'GET /api/boards\n- Auth Required: No',
+    'ui_spec.md': '',
+  });
+  const resReg6 = validateProjectContract(contractReg6);
+  assert.strictEqual(resReg6.valid, false, 'Expected genuine login vs no-auth contradiction to fail validation');
+
+  // Regression 7: Database models fallback from markdown entity headers
+  const contractReg7 = extractProjectContract({
+    'plan.md': '',
+    'requirements.md': '',
+    'architecture.md': 'Database: PostgreSQL\nORM: Prisma',
+    'backend_spec.md': `
+### Database Design
+**Column**
+- Purpose: Represents a column
+- Fields:
+  - id: String
+  - title: String
+`,
+    'ui_spec.md': '',
+  });
+  assert.ok(contractReg7.models.length > 0, 'Expected entity headers to produce extracted models');
+  const resReg7 = validateProjectContract(contractReg7);
+  assert.strictEqual(resReg7.warnings.length, 0, 'Expected model extraction to clear missing model warning');
+
+  // Regression 8: syncHtmlAssetLinks Vite SPA idempotency and server script rejection
+  const vfsFilesReg8 = ['index.html', 'src/pages/index.tsx', 'src/components/Column.tsx', 'server/app.js'];
+  const contractReg8 = extractProjectContract({
+    'plan.md': '',
+    'requirements.md': '',
+    'architecture.md': 'Frontend: React\nBuild Tool: Vite\nFrontend Entry Point: src/pages/index.tsx\nBackend: Express',
+    'backend_spec.md': '',
+    'ui_spec.md': '',
+  });
+
+  const dirtyHtml = `<!DOCTYPE html><html><head></head><body><script src="server/app.js" defer></script><div id="root"></div></body></html>`;
+  const syncResult1 = syncHtmlAssetLinks(dirtyHtml, vfsFilesReg8, contractReg8);
+  assert.ok(!syncResult1.updatedHtml.includes('server/app.js'), 'Expected syncHtmlAssetLinks to strip server/app.js script tag');
+  assert.ok(syncResult1.updatedHtml.includes('type="module"'), 'Expected syncHtmlAssetLinks to add module script tag');
+  assert.ok(syncResult1.updatedHtml.includes('/src/pages/index.tsx'), 'Expected syncHtmlAssetLinks to reference canonical Vite entry');
+
+  const syncResult2 = syncHtmlAssetLinks(syncResult1.updatedHtml, vfsFilesReg8, contractReg8);
+  assert.strictEqual(syncResult2.syncedLinks.length, 0, 'Expected syncHtmlAssetLinks to be idempotent on second run');
+  assert.strictEqual(syncResult1.updatedHtml, syncResult2.updatedHtml, 'Expected HTML content to remain identical on second run');
+
+  // Regression 9: validateViteBootstrap checks
+  const resViteValid = validateFrameworkBoundaries(
+    {
+      'vite.config.ts': 'export default {};',
+      'index.html': '<!DOCTYPE html><html><body><div id="root"></div><script type="module" src="/src/pages/index.tsx"></script></body></html>',
+      'src/pages/index.tsx': 'import React from "react"; createRoot(document.getElementById("root")).render(<App />);',
+    },
+    'VITE_SPA'
+  );
+  assert.strictEqual(resViteValid.valid, true, 'Expected valid Vite SPA project to pass framework validation');
+
+  const resViteServerInjected = validateFrameworkBoundaries(
+    {
+      'vite.config.ts': 'export default {};',
+      'index.html': '<!DOCTYPE html><html><body><script src="server/app.js"></script><script type="module" src="/src/pages/index.tsx"></script></body></html>',
+    },
+    'VITE_SPA'
+  );
+  assert.strictEqual(resViteServerInjected.valid, false, 'Expected Vite HTML with server/app.js to fail framework validation');
+
+  // Regression 10: Express router prefix composition in validateApiContracts
+  const resRouterComp = validateApiContracts(
+    {
+      framework: 'VITE_SPA',
+      language: 'typescript',
+      orm: 'none',
+      database: 'none',
+      authentication: { required: false },
+      routing: { style: 'static' },
+      entryPoints: ['src/pages/index.tsx'],
+      apiEndpoints: [{ method: 'GET', path: '/api/boards', authRequired: false, source: 'backend_spec.md' }],
+      models: [],
+      dependencies: [],
+    },
+    {
+      'server/app.ts': 'app.use("/api", boardRouter);',
+      'server/routes/boards.ts': 'router.get("/boards", getBoards);',
+    }
+  );
+  assert.strictEqual(resRouterComp.valid, true, 'Expected Express sub-router prefix composition to be recognized by validateApiContracts');
+
+  // Regression 11: validateBlueprintGraph runtime boundary check
+  const bpBoundaryVal = validateBlueprintGraph([
+    {
+      file: 'index.html',
+      purpose: 'Entry HTML',
+      specsRequired: [],
+      exports: [],
+      dependencies: ['server/app.js', 'src/pages/index.tsx'],
+      details: '',
+      rawSection: 'File: index.html\nDependencies: server/app.js, src/pages/index.tsx',
+    },
+  ]);
+  assert.strictEqual(bpBoundaryVal.valid, false, 'Expected Blueprint graph declaring index.html -> server/app.js to fail runtime boundary validation');
+
+  // Regression 12: Directional Blueprint Runtime Boundary Checks (Vite vs Next.js)
+  const contractVite = extractProjectContract({
+    'plan.md': '',
+    'requirements.md': '',
+    'architecture.md': 'Frontend: React\nBuild Tool: Vite\nFrontend Entry Point: src/pages/index.tsx',
+    'backend_spec.md': '',
+    'ui_spec.md': '',
+  });
+
+  const bpVitePrisma = validateBlueprintGraph(
+    [
+      {
+        file: 'src/App.tsx',
+        purpose: 'App',
+        specsRequired: [],
+        exports: [],
+        dependencies: ['src/lib/prisma.ts'],
+        details: '',
+        rawSection: 'File: src/App.tsx\nDependencies: src/lib/prisma.ts',
+      },
+      {
+        file: 'src/lib/prisma.ts',
+        purpose: 'Prisma Client',
+        specsRequired: [],
+        exports: [],
+        dependencies: ['@prisma/client'],
+        details: '',
+        rawSection: 'File: src/lib/prisma.ts\nDependencies: @prisma/client',
+      },
+    ],
+    undefined,
+    contractVite
+  );
+  assert.strictEqual(bpVitePrisma.valid, false, 'Expected Vite frontend component importing src/lib/prisma.ts to fail blueprint boundary check');
+
+  const contractNext = extractProjectContract({
+    'plan.md': '',
+    'requirements.md': '',
+    'architecture.md': 'Frontend: Next.js App Router\nFrontend Entry Point: src/app/page.tsx',
+    'backend_spec.md': '',
+    'ui_spec.md': '',
+  });
+
+  const bpNextServerPrisma = validateBlueprintGraph(
+    [
+      {
+        file: 'src/app/api/products/route.ts',
+        purpose: 'API Route',
+        specsRequired: [],
+        exports: [],
+        dependencies: ['src/lib/prisma.ts'],
+        details: '',
+        rawSection: 'File: src/app/api/products/route.ts\nDependencies: src/lib/prisma.ts',
+      },
+      {
+        file: 'src/lib/prisma.ts',
+        purpose: 'Prisma Client',
+        specsRequired: [],
+        exports: [],
+        dependencies: ['@prisma/client'],
+        details: '',
+        rawSection: 'File: src/lib/prisma.ts\nDependencies: @prisma/client',
+      },
+    ],
+    undefined,
+    contractNext
+  );
+  assert.strictEqual(bpNextServerPrisma.valid, true, 'Expected Next.js server route handler importing src/lib/prisma.ts to pass blueprint boundary check');
+
+  // Regression 13: Stripe Secret Boundary Check
+  const resStripeLeak = validateFrameworkBoundaries(
+    {
+      'src/components/Checkout.tsx': '"use client"\nconst key = "sk_test_123456789";',
+    },
+    'NEXT_APP_ROUTER'
+  );
+  assert.strictEqual(resStripeLeak.valid, false, 'Expected client component with Stripe secret key to fail framework validation');
+
+  const resStripeSafe = validateFrameworkBoundaries(
+    {
+      'src/components/Checkout.tsx': '"use client"\nimport { loadStripe } from "@stripe/stripe-js";',
+      'src/app/api/checkout/route.ts': 'import Stripe from "stripe"; const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);',
+    },
+    'NEXT_APP_ROUTER'
+  );
+  assert.strictEqual(resStripeSafe.valid, true, 'Expected client component with @stripe/stripe-js and server route handler with Stripe SDK to pass framework validation');
+
+  // Regression 14: Next.js Dynamic Catch-All API Route Matching
+  const resDynamicRoute = validateApiContracts(
+    {
+      framework: 'NEXT_APP_ROUTER',
+      language: 'typescript',
+      orm: 'prisma',
+      database: 'sqlite',
+      authentication: { required: false },
+      routing: { style: 'app' },
+      entryPoints: ['src/app/page.tsx'],
+      apiEndpoints: [{ method: 'GET', path: '/api/products', authRequired: false }],
+      models: [],
+      dependencies: [],
+    },
+    {
+      'src/app/api/[...slug]/route.ts': 'export async function GET() { return Response.json([]); }',
+    }
+  );
+  assert.strictEqual(resDynamicRoute.valid, true, 'Expected /api/products to match src/app/api/[...slug]/route.ts export async function GET()');
+
+  // Regression 15: Contract Hash Verification in Blueprint
+  const contractWithHash = {
+    ...contractVite,
+    contractHash: '1111111122222222333333334444444455555555666666667777777788888888',
+  };
+  const bpStaleHash = validateBlueprintGraph(
+    [
+      {
+        file: 'src/main.tsx',
+        purpose: 'Entry',
+        specsRequired: [],
+        exports: [],
+        dependencies: [],
+        details: '',
+        rawSection: '### File: src/main.tsx\n<!-- Contract Hash: 9999999999999999999999999999999999999999999999999999999999999999 -->',
+      },
+    ],
+    undefined,
+    contractWithHash
+  );
+  assert.strictEqual(bpStaleHash.valid, false, 'Expected stale blueprint contract hash to fail blueprint graph validation');
+
+  // Regression 16: Next.js Canonical Entry Resolution for src/app/page.tsx
+  const resNextAppEntry = validateFrameworkBoundaries(
+    {
+      'src/app/page.tsx': 'export default function Page() { return <div>Store</div>; }',
+    },
+    'NEXT_APP_ROUTER',
+    contractNext
+  );
+  assert.strictEqual(resNextAppEntry.valid, true, 'Expected src/app/page.tsx to satisfy Next.js App Router root entry requirement');
+
+  // ─── ARCHITECT RCA REGRESSIONS (Tests A-N + Full E-Commerce Fixture) ───
+
+  // Test A: Next src/app entry point preservation
+  const contractSrcEntry = extractProjectContract({
+    'architecture.md': 'Frontend: Next.js App Router\nFrontend Entry Point: src/app/page.tsx',
+  });
+  assert.strictEqual(contractSrcEntry.entryPoints[0], 'src/app/page.tsx', 'Expected src/app/page.tsx to be extracted as entry point');
+
+  // Test B: Next root app entry point fallback
+  const contractRootEntry = extractProjectContract({
+    'architecture.md': 'Frontend: Next.js App Router\nFrontend Entry Point: app/page.tsx',
+  });
+  assert.strictEqual(contractRootEntry.entryPoints[0], 'app/page.tsx', 'Expected app/page.tsx to be extracted as entry point');
+
+  // Test C: Invalid unnamed dynamic catch-all route segment rejected
+  const archUnnamedRoute = `
+### Tech Stack
+- **Frontend**: Next.js
+
+### Project Folder Structure
+project-root/
+└── src/
+    └── app/
+        └── api/
+            └── [...]/
+                └── route.ts
+
+### Modules
+**Backend API**
+- Responsibility: Handles API routes
+- Owned Files: src/app/api/[...]/route.ts
+- Depends On: None
+- Supports Features: API
+
+### Conventions
+- **File Naming**: camelCase
+`;
+  const valUnnamedRoute = validateArchitectureArtifact(archUnnamedRoute);
+  assert.strictEqual(valUnnamedRoute.valid, false, 'Expected unnamed dynamic catch-all segment [...] to be rejected');
+
+  // Test D: Valid named dynamic catch-all route segment accepted
+  const archValidRoute = `
+### Tech Stack
+- **Frontend**: Next.js
+
+### Project Folder Structure
+project-root/
+└── src/
+    └── app/
+        └── api/
+            └── [...slug]/
+                └── route.ts
+
+### Modules
+**Backend API**
+- Responsibility: Handles API routes
+- Owned Files: src/app/api/[...slug]/route.ts
+- Depends On: None
+- Supports Features: API
+
+### Conventions
+- **File Naming**: camelCase
+`;
+  const valValidRoute = validateArchitectureArtifact(archValidRoute);
+  assert.deepStrictEqual(valValidRoute.errors, [], 'Expected named dynamic catch-all segment [...slug] to be accepted');
+
+  // Test E: Duplicate module ownership rejected
+  const archDuplicateOwnership = `
+### Tech Stack
+- **Frontend**: Next.js
+
+### Project Folder Structure
+project-root/
+└── src/
+    └── app/
+        └── components/
+            └── ProductCard.tsx
+
+### Modules
+**Frontend Pages**
+- Responsibility: Renders pages
+- Owned Files: src/app/components/ProductCard.tsx
+- Depends On: None
+- Supports Features: Catalog
+
+**Frontend Components**
+- Responsibility: UI components
+- Owned Files: src/app/components/ProductCard.tsx
+- Depends On: None
+- Supports Features: Catalog
+
+### Conventions
+- **File Naming**: camelCase
+`;
+  const valDuplicateOwnership = validateArchitectureArtifact(archDuplicateOwnership);
+  assert.strictEqual(valDuplicateOwnership.valid, false, 'Expected duplicate file ownership to be rejected');
+
+  // Test F: Orphan module file rejected
+  const archOrphanFile = `
+### Tech Stack
+- **Frontend**: Next.js
+
+### Project Folder Structure
+project-root/
+└── src/
+    └── app/
+        └── page.tsx
+
+### Modules
+**Frontend Module**
+- Responsibility: Main frontend
+- Owned Files: src/app/page.tsx, src/app/NonExistent.tsx
+- Depends On: None
+- Supports Features: UI
+
+### Conventions
+- **File Naming**: camelCase
+`;
+  const valOrphanFile = validateArchitectureArtifact(archOrphanFile);
+  assert.strictEqual(valOrphanFile.valid, false, 'Expected orphan file claimed by module but missing from tree to be rejected');
+
+  // Test G: Unclaimed tree file rejected
+  const archUnclaimedFile = `
+### Tech Stack
+- **Frontend**: Next.js
+
+### Project Folder Structure
+project-root/
+└── src/
+    └── app/
+        ├── page.tsx
+        └── Unclaimed.tsx
+
+### Modules
+**Frontend Module**
+- Responsibility: Main frontend
+- Owned Files: src/app/page.tsx
+- Depends On: None
+- Supports Features: UI
+
+### Conventions
+- **File Naming**: camelCase
+`;
+  const valUnclaimedFile = validateArchitectureArtifact(archUnclaimedFile);
+  assert.strictEqual(valUnclaimedFile.valid, false, 'Expected tree file unclaimed by any module to be rejected');
+
+  // Test H: Stripe integration extraction
+  const contractStripe = extractProjectContract({
+    'architecture.md': 'Tech Stack: Next.js + Stripe\nAdditional: Stripe',
+    'backend_spec.md': 'Stripe checkout integration for payments',
+  });
+  assert.strictEqual(contractStripe.integrations?.includes('stripe'), true, 'Expected stripe to be extracted in integrations');
+
+  // Test I: Next Server Component -> Prisma allowed
+  const bpServerPrisma = validateBlueprintGraph(
+    [
+      {
+        file: 'src/app/page.tsx',
+        purpose: 'Server Component Page',
+        specsRequired: [],
+        exports: [],
+        dependencies: ['src/lib/prisma.ts'],
+        details: '',
+        rawSection: 'File: src/app/page.tsx\nDependencies: src/lib/prisma.ts',
+      },
+      {
+        file: 'src/lib/prisma.ts',
+        purpose: 'Prisma Client',
+        specsRequired: [],
+        exports: [],
+        dependencies: ['@prisma/client'],
+        details: '',
+        rawSection: 'File: src/lib/prisma.ts\nDependencies: @prisma/client',
+      },
+    ],
+    undefined,
+    contractNext
+  );
+  assert.strictEqual(bpServerPrisma.valid, true, 'Expected Next.js Server Component importing Prisma to pass boundary check');
+
+  // Test J: Next Client Component -> Prisma rejected
+  const bpClientPrisma = validateBlueprintGraph(
+    [
+      {
+        file: 'src/components/ProductCard.tsx',
+        purpose: 'Client Component',
+        specsRequired: [],
+        exports: [],
+        dependencies: ['src/lib/prisma.ts'],
+        details: '',
+        rawSection: 'File: src/components/ProductCard.tsx\nDependencies: src/lib/prisma.ts',
+      },
+      {
+        file: 'src/lib/prisma.ts',
+        purpose: 'Prisma Client',
+        specsRequired: [],
+        exports: [],
+        dependencies: ['@prisma/client'],
+        details: '',
+        rawSection: 'File: src/lib/prisma.ts\nDependencies: @prisma/client',
+      },
+    ],
+    undefined,
+    contractNext
+  );
+  assert.strictEqual(bpClientPrisma.valid, false, 'Expected Next.js Client Component importing Prisma to be rejected');
+
+  // Test K: Next Route Handler -> Prisma allowed
+  const bpRoutePrisma = validateBlueprintGraph(
+    [
+      {
+        file: 'src/app/api/products/route.ts',
+        purpose: 'Route Handler',
+        specsRequired: [],
+        exports: [],
+        dependencies: ['src/lib/prisma.ts'],
+        details: '',
+        rawSection: 'File: src/app/api/products/route.ts\nDependencies: src/lib/prisma.ts',
+      },
+      {
+        file: 'src/lib/prisma.ts',
+        purpose: 'Prisma Client',
+        specsRequired: [],
+        exports: [],
+        dependencies: ['@prisma/client'],
+        details: '',
+        rawSection: 'File: src/lib/prisma.ts\nDependencies: @prisma/client',
+      },
+    ],
+    undefined,
+    contractNext
+  );
+  assert.strictEqual(bpRoutePrisma.valid, true, 'Expected Next.js Route Handler importing Prisma to pass boundary check');
+
+  // Test L: Client Component referencing /api/products allowed
+  const resClientApi = validateFrameworkBoundaries(
+    {
+      'src/components/ProductList.tsx': '"use client"\nimport React from "react"; fetch("/api/products");',
+      'src/app/api/products/route.ts': 'export async function GET() { return Response.json([]); }',
+    },
+    'NEXT_APP_ROUTER',
+    contractNext
+  );
+  assert.strictEqual(resClientApi.valid, true, 'Expected Client component fetching /api/products to pass framework validation');
+
+  // Test M: Stripe client/server split allowed
+  const resStripeSplit = validateFrameworkBoundaries(
+    {
+      'src/components/CheckoutButton.tsx': '"use client"\nimport { loadStripe } from "@stripe/stripe-js";',
+      'src/app/api/checkout/route.ts': 'import Stripe from "stripe"; const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);',
+    },
+    'NEXT_APP_ROUTER',
+    contractNext
+  );
+  assert.strictEqual(resStripeSplit.valid, true, 'Expected Stripe client/server split to pass framework validation');
+
+  // Test N: Stripe secret leak in client component rejected
+  const resStripeLeakTestN = validateFrameworkBoundaries(
+    {
+      'src/components/CheckoutButton.tsx': '"use client"\nconst secret = process.env.STRIPE_SECRET_KEY;',
+    },
+    'NEXT_APP_ROUTER',
+    contractNext
+  );
+  assert.strictEqual(resStripeLeakTestN.valid, false, 'Expected Stripe secret key in client component to be rejected');
+
+  // ─── FULL E-COMMERCE INTEGRATION FIXTURE TEST (Section 23 & Patch 59) ───
+  const ecomArch = `
+### Tech Stack
+- **Frontend**: Next.js App Router
+- **Frontend Entry Point**: src/app/page.tsx
+- **Backend**: Next.js API Routes
+- **Backend Entry Point**: src/app/api/[...slug]/route.ts
+- **Database**: SQLite
+- **ORM**: Prisma
+- **Authentication**: None — no auth needed
+- **Build Tool**: None
+- **Additional**: Stripe
+
+### Project Folder Structure
+project-root/
+├── public/
+│   └── next.svg
+└── src/
+    ├── app/
+    │   ├── layout.tsx
+    │   ├── page.tsx
+    │   ├── api/
+    │   │   └── [...slug]/
+    │   │       └── route.ts
+    │   └── components/
+    │       ├── ProductCard.tsx
+    │       ├── SearchBar.tsx
+    │       └── CartItem.tsx
+    ├── lib/
+    │   ├── prisma.ts
+    │   └── stripe.ts
+    └── styles/
+        └── globals.css
+
+### Modules
+**Application Shell**
+- Responsibility: Provides the root App Router shell
+- Owned Files: src/app/layout.tsx, src/app/page.tsx
+- Depends On: Storefront Components
+- Supports Features: Storefront
+
+**Storefront Components**
+- Responsibility: Renders product and search components
+- Owned Files: src/app/components/ProductCard.tsx, src/app/components/SearchBar.tsx, src/app/components/CartItem.tsx, src/styles/globals.css
+- Depends On: Data Access
+- Supports Features: Product Catalog & Search
+
+**API Routes**
+- Responsibility: Handles API routes and checkout
+- Owned Files: src/app/api/[...slug]/route.ts
+- Depends On: Data Access
+- Supports Features: API & Payments
+
+**Data Access**
+- Responsibility: Provides database and payment integration access
+- Owned Files: src/lib/prisma.ts, src/lib/stripe.ts
+- Depends On: None
+- Supports Features: Persistence & Payments
+
+**Static Assets**
+- Responsibility: Provides public static assets
+- Owned Files: public/next.svg
+- Depends On: None
+- Supports Features: Static Assets
+
+### Conventions
+- **File Naming**: camelCase
+- **Function Naming**: camelCase
+- **Import Style**: ES6
+- **Entry Point**: src/app/page.tsx
+`;
+
+  const ecomContract = extractProjectContract({
+    'architecture.md': ecomArch,
+    'backend_spec.md': `
+### API Endpoints
+**GET /api/products** — Search catalog
+- Request Body: None
+- Auth Required: No
+
+**POST /api/checkout** — Stripe checkout
+- Request Body: Cart items
+- Auth Required: No
+`,
+    'prisma/schema.prisma': `
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Product {
+  id          String @id @default(uuid())
+  name        String
+  price       Float
+}
+`,
+  });
+
+  const valEcomArch = validateArchitectureArtifact(ecomArch, ecomContract);
+  assert.deepStrictEqual(valEcomArch.errors, [], 'Expected full E-Commerce architecture.md artifact to pass validation');
+
+  const valEcomContract = validateProjectContract(ecomContract);
+  assert.deepStrictEqual(valEcomContract.errors, [], 'Expected full E-Commerce contract to pass validation');
+
+  const valEcomApi = validateApiContracts(ecomContract, {
+    'src/app/api/[...slug]/route.ts': 'export async function GET() { return Response.json([]); } export async function POST() { return Response.json({ url: "" }); }',
+  });
+  assert.strictEqual(valEcomApi.valid, true, 'Expected E-Commerce API routes matching [...slug] to pass API validation');
+
+  const valEcomFramework = validateFrameworkBoundaries(
+    {
+      'src/app/page.tsx': 'import { prisma } from "../lib/prisma"; export default async function Page() { return <div>Store</div>;',
+      'src/app/components/ProductCard.tsx': '"use client"\nimport React from "react"; export function ProductCard() { return <div>Card</div>; }',
+      'src/app/api/[...slug]/route.ts': 'import { prisma } from "../../../lib/prisma"; import Stripe from "stripe"; export async function GET() { return Response.json([]); }',
+    },
+    'NEXT_APP_ROUTER',
+    ecomContract
+  );
+  assert.strictEqual(valEcomFramework.valid, true, 'Expected E-Commerce framework boundary check to pass');
+
+  // ─── ARCHITECT ROUTE REGRESSION TESTS (Tests 1-13) ───
+
+  // Test 1: Direct architecture validator rejects [...]
+  const archUnnamed1 = `
+### Tech Stack
+- **Frontend**: Next.js App Router
+- **Frontend Entry Point**: src/app/page.tsx
+- **Backend Entry Point**: src/app/api/[...]/route.ts
+
+### Project Folder Structure
+project-root/
+└── src/
+    └── app/
+        ├── page.tsx
+        └── api/
+            └── [...]/
+                └── route.ts
+
+### Modules
+**App Module**
+- Responsibility: App
+- Owned Files: src/app/page.tsx, src/app/api/[...]/route.ts
+- Depends On: None
+
+### Conventions
+- **File Naming**: camelCase
+`;
+  const valArchUnnamed1 = validateArchitectureArtifact(archUnnamed1);
+  assert.strictEqual(valArchUnnamed1.valid, false, 'Test 1: Expected [...] to be rejected by validateArchitectureArtifact');
+
+  // Test 2: Architect acceptance gate rejects invalid architecture
+  const valAcceptGate2 = await validateArchitectOutput('test-convo-2', archUnnamed1);
+  assert.strictEqual(valAcceptGate2.valid, false, 'Test 2: Expected validateArchitectOutput to reject unnamed dynamic segment');
+  assert.ok(
+    valAcceptGate2.errors.some((e) => e.includes('[...]') || e.includes('dynamic')),
+    'Test 2: Expected dynamic segment error message'
+  );
+
+  // Test 3 & 4: Retry logic & valid structure acceptance
+  const archValid3 = archUnnamed1.replace(/\[\.\.\.\]/g, '[...slug]');
+  const valAcceptGate3 = await validateArchitectOutput('test-convo-3', archValid3);
+  assert.strictEqual(valAcceptGate3.valid, true, 'Test 3: Expected [...slug] to pass validateArchitectOutput');
+
+  // Test 5: Valid Next catch-all
+  const archCatchAll5 = `
+### Tech Stack
+- **Frontend**: Next.js App Router
+- **Frontend Entry Point**: src/app/page.tsx
+- **Backend Entry Point**: src/app/api/[...slug]/route.ts
+
+### Project Folder Structure
+project-root/
+└── src/
+    └── app/
+        ├── page.tsx
+        └── api/
+            └── [...slug]/
+                └── route.ts
+
+### Modules
+**App Module**
+- Responsibility: App
+- Owned Files: src/app/page.tsx, src/app/api/[...slug]/route.ts
+- Depends On: None
+
+### Conventions
+- **File Naming**: camelCase
+`;
+  const valArch5 = validateArchitectureArtifact(archCatchAll5);
+  assert.strictEqual(valArch5.valid, true, 'Test 5: Expected [...slug] catch-all route to pass architecture validation');
+
+  // Test 6: Optional catch-all
+  const archOptCatchAll6 = archCatchAll5.replace(/\[\.\.\.slug\]/g, '[[...slug]]');
+  const valArch6 = validateArchitectureArtifact(archOptCatchAll6);
+  assert.strictEqual(valArch6.valid, true, 'Test 6: Expected [[...slug]] optional catch-all route to pass architecture validation');
+
+  // Test 7: Named dynamic route
+  const archNamedDyn7 = archCatchAll5.replace(/\[\.\.\.slug\]/g, '[id]');
+  const valArch7 = validateArchitectureArtifact(archNamedDyn7);
+  assert.strictEqual(valArch7.valid, true, 'Test 7: Expected [id] dynamic route to pass architecture validation');
+
+  // Test 8: Invalid empty segment
+  const archEmptySeg8 = archCatchAll5.replace(/\[\.\.\.slug\]/g, '[[]');
+  const valArch8 = validateArchitectureArtifact(archEmptySeg8);
+  assert.strictEqual(valArch8.valid, false, 'Test 8: Expected malformed segment [[] to be rejected');
+
+  // Test 9: Backend entry contract extraction
+  const contractBackendEntry9 = extractProjectContract({
+    'architecture.md': `
+### Tech Stack
+- **Frontend**: Next.js App Router
+- **Backend Entry Point**: src/app/api/[...slug]/route.ts
+`,
+  });
+  assert.ok(
+    contractBackendEntry9.backendEntryPoints?.includes('src/app/api/[...slug]/route.ts'),
+    'Test 9: Expected backendEntryPoints to include src/app/api/[...slug]/route.ts'
+  );
+
+  // Test 10: Invalid backend entry in contract
+  const archInvalidBackend10 = `
+### Tech Stack
+- **Frontend**: Next.js App Router
+- **Frontend Entry Point**: src/app/page.tsx
+- **Backend Entry Point**: src/app/api/[...]/route.ts
+
+### Project Folder Structure
+project-root/
+└── src/
+    └── app/
+        ├── page.tsx
+        └── api/
+            └── [...]/
+                └── route.ts
+
+### Modules
+**App Module**
+- Responsibility: App
+- Owned Files: src/app/page.tsx, src/app/api/[...]/route.ts
+- Depends On: None
+
+### Conventions
+- **File Naming**: camelCase
+`;
+  const contract10 = extractProjectContract({ 'architecture.md': archInvalidBackend10 });
+  const valArch10 = validateArchitectureArtifact(archInvalidBackend10, contract10);
+  assert.strictEqual(valArch10.valid, false, 'Test 10: Expected invalid backend entry in contract to fail architecture validation');
+
+  // Test 11: Module dependency integrity (Missing module)
+  const archMissingDep11 = `
+### Tech Stack
+- **Frontend**: React
+- **Frontend Entry Point**: src/index.tsx
+
+### Project Folder Structure
+project-root/
+└── src/
+    └── index.tsx
+
+### Modules
+**Frontend Module**
+- Responsibility: UI
+- Owned Files: src/index.tsx
+- Depends On: NonExistentService
+
+### Conventions
+- **File Naming**: camelCase
+`;
+  const valArch11 = validateArchitectureArtifact(archMissingDep11);
+  assert.strictEqual(valArch11.valid, false, 'Test 11: Expected dependency on missing module to fail architecture validation');
+  assert.ok(
+    valArch11.errors.some((e) => e.includes('NonExistentService')),
+    'Test 11: Expected error specifying missing dependency module'
+  );
+
+  // Test 12: Self dependency
+  const archSelfDep12 = `
+### Tech Stack
+- **Frontend**: React
+- **Frontend Entry Point**: src/index.tsx
+
+### Project Folder Structure
+project-root/
+└── src/
+    └── index.tsx
+
+### Modules
+**Frontend Module**
+- Responsibility: UI
+- Owned Files: src/index.tsx
+- Depends On: Frontend Module
+
+### Conventions
+- **File Naming**: camelCase
+`;
+  const valArch12 = validateArchitectureArtifact(archSelfDep12);
+  assert.strictEqual(valArch12.valid, false, 'Test 12: Expected self-dependency to fail architecture validation');
+  assert.ok(
+    valArch12.errors.some((e) => e.toLowerCase().includes('cannot depend on itself')),
+    'Test 12: Expected self-dependency error message'
+  );
+
+  // Test 13: API matching strictly rejects unrelated substring files
+  const resApiMatch13 = validateApiContracts(
+    [{ method: 'GET', path: '/api/products', authRequired: false, source: 'backend_spec.md' }],
+    {
+      'src/app/api/products-old-backup.ts': 'export async function GET() { return Response.json([]); }',
+    }
+  );
+  assert.strictEqual(resApiMatch13.valid, false, 'Test 13: Expected /api/products NOT to match src/app/api/products-old-backup.ts');
+
+  // ─── SPEC FIX PATCHES 37-65 NEW TESTS ───
+
+  // Context Test A & B
+  const composedA = composeAgentUserContent({
+    upstreamContext: '=== ARTIFACT: plan.md ===\nPLAN_SENTINEL\n=== END ARTIFACT: plan.md ===',
+    customUserContent: 'CUSTOM_SENTINEL',
+    userPromptText: 'USER_SENTINEL',
+    attempt: 1,
+  });
+  assert.ok(composedA.includes('PLAN_SENTINEL'));
+  assert.ok(composedA.includes('CUSTOM_SENTINEL'));
+  assert.ok(composedA.includes('USER_SENTINEL'));
+  assert.ok(composedA.indexOf('PLAN_SENTINEL') < composedA.indexOf('CUSTOM_SENTINEL'));
+  assert.ok(composedA.indexOf('CUSTOM_SENTINEL') < composedA.indexOf('USER_SENTINEL'));
+
+  // Context Test C: Retry
+  const composedRetry = composeAgentUserContent({
+    upstreamContext: '=== ARTIFACT: plan.md ===\nPLAN_SENTINEL',
+    customUserContent: 'CUSTOM_SENTINEL',
+    userPromptText: 'USER_SENTINEL',
+    attempt: 2,
+    validationError: 'VALIDATION_SENTINEL',
+  });
+  assert.ok(composedRetry.includes('PLAN_SENTINEL'));
+  assert.ok(composedRetry.includes('CUSTOM_SENTINEL'));
+  assert.ok(composedRetry.includes('USER_SENTINEL'));
+  assert.ok(composedRetry.includes('VALIDATION_SENTINEL'));
+
+  // Context Test D: No custom content
+  const composedNoCustom = composeAgentUserContent({
+    upstreamContext: 'UPSTREAM_SENTINEL',
+    customUserContent: undefined,
+    userPromptText: 'USER_SENTINEL',
+    attempt: 1,
+  });
+  assert.ok(composedNoCustom.includes('UPSTREAM_SENTINEL'));
+  assert.ok(composedNoCustom.includes('USER_SENTINEL'));
+
+  // Context Test E: No upstream content
+  const composedNoUpstream = composeAgentUserContent({
+    upstreamContext: '',
+    customUserContent: 'CUSTOM_SENTINEL',
+    userPromptText: 'USER_SENTINEL',
+    attempt: 1,
+  });
+  assert.ok(composedNoUpstream.includes('CUSTOM_SENTINEL'));
+  assert.ok(composedNoUpstream.includes('USER_SENTINEL'));
+
+  // Test Strict Module Parser
+  const validModulesFixture = `
+### Modules
+
+**Storefront**
+- Responsibility: Renders the storefront
+- Owned Files: src/app/page.tsx, src/components/ProductCard.tsx
+- Depends On: Data Access
+- Supports Features: Catalog
+
+**Data Access**
+- Responsibility: Provides persistence access
+- Owned Files: src/lib/prisma.ts
+- Depends On: None
+- Supports Features: Persistence
+
+### Conventions
+- **File Naming**: kebab-case
+`;
+  const parsedModules = parseArchitectureModules(validModulesFixture);
+  assert.deepStrictEqual(parsedModules.modules.map((m) => m.name), ['Storefront', 'Data Access']);
+  assert.strictEqual(parsedModules.errors.length, 0);
+
+  // Test Field-Line False Positive
+  const fieldFixture = `
+### Modules
+
+**Storefront**
+- Responsibility: Renders the storefront
+- Owned Files: src/app/page.tsx
+- Depends On: None
+- Supports Features: Catalog
+
+### Conventions
+- **File Naming**: kebab-case
+`;
+  const parsedField = parseArchitectureModules(fieldFixture);
+  assert.deepStrictEqual(parsedField.modules.map((m) => m.name), ['Storefront']);
+  assert.ok(!parsedField.modules.some((m) => m.name.startsWith('- Responsibility')));
+
+  // Test Exact Current Failure Shape
+  const failingModuleFixture = `
+### Modules
+
+**Storefront**
+- Responsibility: Renders the main storefront and search pages
+- Owned Files: src/app/page.tsx
+- Depends On: ProductCard, SearchBar
+- Supports Features: Product browsing
+
+**API Routes**
+- Responsibility: Handles API routes
+- Owned Files: src/app/api/[...slug]/route.ts
+- Depends On: Prisma client
+- Supports Features: API
+`;
+  const parsedFailing = parseArchitectureModules(failingModuleFixture);
+  assert.deepStrictEqual(parsedFailing.modules.map((m) => m.name), ['Storefront', 'API Routes']);
+  const valFailing = validateArchitectureArtifact(`
+### Tech Stack
+- **Frontend**: Next.js App Router
+- **Frontend Entry Point**: src/app/page.tsx
+- **Backend Entry Point**: src/app/api/[...slug]/route.ts
+
+### Project Folder Structure
+project-root/
+└── src/
+    └── app/
+        ├── page.tsx
+        └── api/
+            └── [...slug]/
+                └── route.ts
+
+${failingModuleFixture}
+
+### Conventions
+- **File Naming**: kebab-case
+`);
+  assert.strictEqual(valFailing.valid, false);
+  assert.ok(valFailing.errors.some((e) => e.includes('ProductCard') || e.includes('SearchBar') || e.includes('Prisma client')));
+
+  // Test Valid Component Ownership
+  const validCompOwnership = `
+### Tech Stack
+- **Frontend**: Next.js App Router
+- **Frontend Entry Point**: src/app/page.tsx
+
+### Project Folder Structure
+project-root/
+└── src/
+    ├── app/
+    │   └── page.tsx
+    ├── components/
+    │   ├── ProductCard.tsx
+    │   └── SearchBar.tsx
+    └── lib/
+        └── prisma.ts
+
+### Modules
+**Storefront**
+- Responsibility: UI
+- Owned Files: src/app/page.tsx, src/components/ProductCard.tsx, src/components/SearchBar.tsx
+- Depends On: Data Access
+
+**Data Access**
+- Responsibility: Database
+- Owned Files: src/lib/prisma.ts
+- Depends On: None
+
+### Conventions
+- **File Naming**: kebab-case
+`;
+  const valCompOwnership = validateArchitectureArtifact(validCompOwnership);
+  assert.strictEqual(valCompOwnership.valid, true);
+
+  // Test Unclaimed layout.tsx
+  const layoutUnclaimed = `
+### Tech Stack
+- **Frontend**: Next.js App Router
+- **Frontend Entry Point**: src/app/page.tsx
+
+### Project Folder Structure
+project-root/
+└── src/
+    └── app/
+        ├── page.tsx
+        └── layout.tsx
+
+### Modules
+**App**
+- Responsibility: Main application
+- Owned Files: src/app/page.tsx
+- Depends On: None
+- Supports Features: App
+
+### Conventions
+- **File Naming**: kebab-case
+`;
+  const valLayoutUnclaimed = validateArchitectureArtifact(layoutUnclaimed);
+  assert.strictEqual(valLayoutUnclaimed.valid, false);
+  assert.ok(valLayoutUnclaimed.errors.some((e) => e.includes('src/app/layout.tsx')));
+
+  // Test Valid layout.tsx Ownership
+  const layoutClaimed = layoutUnclaimed.replace('Owned Files: src/app/page.tsx', 'Owned Files: src/app/page.tsx, src/app/layout.tsx');
+  const valLayoutClaimed = validateArchitectureArtifact(layoutClaimed);
+  assert.strictEqual(valLayoutClaimed.valid, true);
+
+  // Test Root Public Asset
+  const rootPublicAsset = `
+### Tech Stack
+- **Frontend**: Next.js App Router
+- **Frontend Entry Point**: src/app/page.tsx
+
+### Project Folder Structure
+project-root/
+├── public/
+│   └── next.svg
+└── src/
+    └── app/
+        └── page.tsx
+
+### Modules
+**App**
+- Responsibility: Main app
+- Owned Files: src/app/page.tsx, public/next.svg
+- Depends On: None
+
+### Conventions
+- **File Naming**: kebab-case
+`;
+  const valRootPublic = validateArchitectureArtifact(rootPublicAsset);
+  assert.strictEqual(valRootPublic.valid, true);
+
+  // Test src/public Rejection
+  const srcPublicAsset = `
+### Tech Stack
+- **Frontend**: Next.js App Router
+- **Frontend Entry Point**: src/app/page.tsx
+
+### Project Folder Structure
+project-root/
+└── src/
+    ├── public/
+    │   └── next.svg
+    └── app/
+        └── page.tsx
+
+### Modules
+**App**
+- Responsibility: Main app
+- Owned Files: src/app/page.tsx, src/public/next.svg
+- Depends On: None
+
+### Conventions
+- **File Naming**: kebab-case
+`;
+  const valSrcPublic = validateArchitectureArtifact(srcPublicAsset);
+  assert.strictEqual(valSrcPublic.valid, false);
+  assert.ok(valSrcPublic.errors.some((e) => e.includes('must be placed under project-root "public/"')));
+
+  // Test Backend Entry Escape Hatch
+  const invalidBackendEntryEscape = `
+### Tech Stack
+- **Frontend**: Next.js App Router
+- **Frontend Entry Point**: src/app/page.tsx
+- **Backend Entry Point**: src/foo/route.ts
+
+### Project Folder Structure
+project-root/
+└── src/
+    ├── app/
+    │   └── page.tsx
+    └── foo/
+        └── route.ts
+
+### Modules
+**App**
+- Responsibility: Main app
+- Owned Files: src/app/page.tsx, src/foo/route.ts
+- Depends On: None
+
+### Conventions
+- **File Naming**: kebab-case
+`;
+  const valInvalidEscape = validateArchitectureArtifact(invalidBackendEntryEscape);
+  assert.strictEqual(valInvalidEscape.valid, false);
+  assert.ok(valInvalidEscape.errors.some((e) => e.includes('Backend Entry Point')));
+
+  // Test Module Cycle
+  const cycleFixture = `
+### Tech Stack
+- **Frontend**: React
+- **Frontend Entry Point**: src/a.ts
+
+### Project Folder Structure
+project-root/
+└── src/
+    ├── a.ts
+    └── b.ts
+
+### Modules
+**Module A**
+- Responsibility: A
+- Owned Files: src/a.ts
+- Depends On: Module B
+
+**Module B**
+- Responsibility: B
+- Owned Files: src/b.ts
+- Depends On: Module A
+
+### Conventions
+- **File Naming**: kebab-case
+`;
+  const valCycle = validateArchitectureArtifact(cycleFixture);
+  assert.strictEqual(valCycle.valid, false);
+  assert.ok(valCycle.errors.some((e) => e.toLowerCase().includes('cycle detected')));
+
+  // Test Package Dependency Rejection
+  const pkgDepFixture = `
+### Tech Stack
+- **Frontend**: Next.js App Router
+- **Frontend Entry Point**: src/app/page.tsx
+
+### Project Folder Structure
+project-root/
+└── src/
+    └── app/
+        └── page.tsx
+
+### Modules
+**App**
+- Responsibility: UI
+- Owned Files: src/app/page.tsx
+- Depends On: @prisma/client
+
+### Conventions
+- **File Naming**: kebab-case
+`;
+  const valPkgDep = validateArchitectureArtifact(pkgDepFixture);
+  assert.strictEqual(valPkgDep.valid, false);
+  assert.ok(valPkgDep.errors.some((e) => e.includes('@prisma/client')));
+
+  // Test Full Negative E-Commerce Fixture (Patch 60)
+  const ecomNegativeArch = `
+### Tech Stack
+- **Frontend**: Next.js App Router
+- **Frontend Entry Point**: src/app/page.tsx
+- **Backend**: Next.js API Routes
+- **Backend Entry Point**: src/app/api/[...]/route.ts
+- **Database**: SQLite
+- **ORM**: Prisma
+- **Authentication**: None — no auth needed
+- **Build Tool**: None
+- **Additional**: Stripe
+
+### Project Folder Structure
+project-root/
+└── src/
+    ├── app/
+    │   ├── layout.tsx
+    │   ├── page.tsx
+    │   └── api/
+    │       └── [...]/
+    │           └── route.ts
+    ├── public/
+    │   └── next.svg
+    ├── lib/
+    │   ├── prisma.ts
+    │   └── stripe.ts
+    └── styles/
+        └── globals.css
+
+### Modules
+**Storefront**
+- Responsibility: Renders the storefront
+- Owned Files: src/app/page.tsx
+- Depends On: ProductCard, SearchBar
+
+**API Routes**
+- Responsibility: Handles API routes
+- Owned Files: src/app/api/[...]/route.ts
+- Depends On: Prisma client
+
+**Data Access**
+- Responsibility: Provides persistence access
+- Owned Files: src/lib/prisma.ts, src/lib/stripe.ts
+- Depends On: None
+
+### Conventions
+- **File Naming**: kebab-case
+`;
+  const valEcomNegative = validateArchitectureArtifact(ecomNegativeArch);
+  assert.strictEqual(valEcomNegative.valid, false, 'Expected Full Negative E-Commerce fixture to fail validation');
+  assert.ok(valEcomNegative.errors.some((e) => e.includes('[...]')));
+  assert.ok(valEcomNegative.errors.some((e) => e.includes('src/app/layout.tsx')));
+  assert.ok(valEcomNegative.errors.some((e) => e.includes('src/public/next.svg')));
+  assert.ok(valEcomNegative.errors.some((e) => e.includes('ProductCard') || e.includes('SearchBar') || e.includes('Prisma client')));
+
+  // Test Persistence Decision
+  assert.strictEqual(shouldPersistAgentOutput('Architect', false), false);
+  assert.strictEqual(shouldPersistAgentOutput('Architect', true), true);
+  assert.strictEqual(shouldPersistAgentOutput('Planner', true), true);
+
+  console.log('✅ All Kanban & E-Commerce spec contract regression assertions (A-T + Regressions 1-16 + Architect RCA Tests A-N + Full E-Commerce Fixture + Route Regression Tests 1-13 + Patches 37-65 New Tests) passed successfully.');
+}
+
+if (require.main === module) {
+  runKanbanContractTests().catch((err) => {
+    console.error('❌ Test suite failed:', err);
+    process.exit(1);
+  });
+}
