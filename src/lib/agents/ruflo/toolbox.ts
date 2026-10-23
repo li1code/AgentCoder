@@ -1,5 +1,5 @@
 import { getOrCreateRunBudget } from './budget-manager';
-import { readVirtualFile, writeVirtualFile, listVirtualFiles, applyDiff } from './vfs';
+import { readVirtualFile, listVirtualFiles } from './vfs';
 import { runLinter } from './linter';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
@@ -13,6 +13,7 @@ import {
   parseBlueprintContract,
 } from './workspace-policy';
 import { requiresModuleOwnership } from './architecture-file-policy';
+import { executeDurableMutation } from './mutation-manager';
 
 const execFileAsync = promisify(execFile);
 
@@ -182,9 +183,14 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
       },
     },
     execute: async (args, conversationId) => {
-      await assertAuthorizedToolMutation(conversationId, args.file_path);
-      await writeVirtualFile(conversationId, args.file_path, args.content);
-      return { success: true, message: `File "${args.file_path}" written successfully (${args.content.length} bytes).` };
+      const receipt = await executeDurableMutation({
+        conversationId,
+        pipelineRunId: conversationId,
+        opType: 'FILE_WRITE',
+        targetPath: args.file_path,
+        content: args.content,
+      });
+      return { success: true, operationKey: receipt.operationKey, message: `File "${args.file_path}" written successfully (${args.content.length} bytes).` };
     },
   },
 
@@ -218,9 +224,15 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
       },
     },
     execute: async (args, conversationId) => {
-      await assertAuthorizedToolMutation(conversationId, args.file_path);
-      await applyDiff(conversationId, args.file_path, args.start_line, args.end_line, args.new_content);
-      return { success: true, message: `Lines ${args.start_line}-${args.end_line} of "${args.file_path}" replaced successfully.` };
+      const receipt = await executeDurableMutation({
+        conversationId,
+        pipelineRunId: conversationId,
+        opType: 'DIFF_PATCH',
+        targetPath: args.file_path,
+        content: args.new_content,
+        diffRange: { startLine: args.start_line, endLine: args.end_line },
+      });
+      return { success: true, operationKey: receipt.operationKey, message: `Lines ${args.start_line}-${args.end_line} of "${args.file_path}" replaced successfully.` };
     },
   },
 

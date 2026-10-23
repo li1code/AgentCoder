@@ -186,7 +186,7 @@ export async function executeContractStage(params: ExecuteContractStageParams) {
           signal,
           retryFeedback || undefined,
           targetFile,
-          true
+          false // Candidate output stays in memory until validated and durably accepted.
         );
         candidateContent = agentResult?.content || '';
         currentWorkspaceHash = await computeWorkspaceFingerprint(conversationId);
@@ -218,7 +218,7 @@ export async function executeContractStage(params: ExecuteContractStageParams) {
           signal,
           retryFeedback || undefined,
           targetFile,
-          true
+          false // Candidate output stays in memory until validated and durably accepted.
         );
         candidateContent = agentResult?.content || '';
       } else if (stageName === 'Reviewer') {
@@ -249,7 +249,7 @@ export async function executeContractStage(params: ExecuteContractStageParams) {
           signal,
           retryFeedback || undefined,
           targetFile,
-          true
+          false // Candidate output stays in memory until validated and durably accepted.
         );
         candidateContent = agentResult?.content || '';
       } else {
@@ -264,7 +264,7 @@ export async function executeContractStage(params: ExecuteContractStageParams) {
           signal,
           retryFeedback || undefined,
           targetFile,
-          true
+          false // Candidate output stays in memory until validated and durably accepted.
         );
         candidateContent = agentResult?.content || '';
       }

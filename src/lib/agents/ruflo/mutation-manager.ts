@@ -12,8 +12,8 @@ import { createHash } from 'crypto';
 import { readVirtualFile, writeVirtualFile, applyDiff } from './vfs';
 import { canonicalizeProjectPath } from './workspace-policy';
 import { computeWorkspaceFingerprint } from './verification-loop';
-import { assertAuthorizedToolMutation } from './toolbox';
 import { getOrCreateRunBudget } from './budget-manager';
+import { prisma } from '../../db';
 
 export type MutationOpType = 'FILE_WRITE' | 'DIFF_PATCH';
 export type MutationState = 'INTENDED' | 'APPLYING' | 'COMMITTED' | 'FAILED' | 'RECOVERY_REQUIRED';
@@ -22,6 +22,7 @@ export interface MutationReceipt {
   operationKey: string;
   conversationId: string;
   pipelineRunId: string;
+  stageExecutionId?: string;
   opType: MutationOpType;
   targetPath: string;
   baseWorkspaceHash: string;
@@ -34,10 +35,13 @@ export interface DurableOperationRecord {
   operationKey: string;
   conversationId: string;
   pipelineRunId: string;
+  stageExecutionId?: string;
   opType: MutationOpType;
   targetPath: string;
   state: MutationState;
   intendedContent: string;
+  baseContentHash: string;
+  expectedContentHash: string;
   diffRange?: { startLine: number; endLine: number };
   baseWorkspaceHash: string;
   receipt?: MutationReceipt;
@@ -57,9 +61,65 @@ export class RecoveryRequiredException extends Error {
   }
 }
 
-// Durable in-memory registry of operation records and receipts per conversation
-const operationRegistry = new Map<string, DurableOperationRecord>();
-const committedReceipts = new Map<string, MutationReceipt>();
+type MutationLifecyclePhase = 'APPLYING' | 'APPLIED';
+let mutationFaultInjector: ((phase: MutationLifecyclePhase) => void | Promise<void>) | null = null;
+const operationLocks = new Map<string, Promise<void>>();
+
+export function setMutationFaultInjectorForTest(
+  injector: ((phase: MutationLifecyclePhase) => void | Promise<void>) | null
+): void {
+  mutationFaultInjector = injector;
+}
+
+function toOperationRecord(row: any): DurableOperationRecord {
+  return {
+    operationKey: row.operationKey,
+    conversationId: row.conversationId,
+    pipelineRunId: row.pipelineRunId,
+    stageExecutionId: row.stageExecutionId || undefined,
+    opType: row.opType,
+    targetPath: row.targetPath,
+    state: row.state,
+    intendedContent: row.intendedContent,
+    baseContentHash: row.baseContentHash,
+    expectedContentHash: row.expectedContentHash,
+    diffRange: row.diffStartLine == null || row.diffEndLine == null
+      ? undefined
+      : { startLine: row.diffStartLine, endLine: row.diffEndLine },
+    baseWorkspaceHash: row.baseWorkspaceHash,
+    receipt: row.receiptJson ? JSON.parse(row.receiptJson) : undefined,
+    error: row.error || undefined,
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+async function persistOperation(record: DurableOperationRecord): Promise<void> {
+  await prisma.durableMutation.upsert({
+    where: { operationKey: record.operationKey },
+    create: {
+      operationKey: record.operationKey,
+      conversationId: record.conversationId,
+      pipelineRunId: record.pipelineRunId,
+      stageExecutionId: record.stageExecutionId,
+      opType: record.opType,
+      targetPath: record.targetPath,
+      state: record.state,
+      intendedContent: record.intendedContent,
+      baseContentHash: record.baseContentHash,
+      expectedContentHash: record.expectedContentHash,
+      diffStartLine: record.diffRange?.startLine,
+      diffEndLine: record.diffRange?.endLine,
+      baseWorkspaceHash: record.baseWorkspaceHash,
+      receiptJson: record.receipt ? JSON.stringify(record.receipt) : null,
+      error: record.error,
+    },
+    update: {
+      state: record.state,
+      receiptJson: record.receipt ? JSON.stringify(record.receipt) : null,
+      error: record.error,
+    },
+  });
+}
 
 export function generateOperationKey(params: {
   conversationId: string;
@@ -80,7 +140,7 @@ export function computeSha256(content: string): string {
   return createHash('sha256').update(content, 'utf8').digest('hex');
 }
 
-export async function executeDurableMutation(params: {
+async function executeDurableMutationLocked(params: {
   conversationId: string;
   pipelineRunId: string;
   stageExecutionId?: string;
@@ -93,6 +153,7 @@ export async function executeDurableMutation(params: {
   const {
     conversationId,
     pipelineRunId,
+    stageExecutionId,
     opType,
     targetPath,
     content,
@@ -103,6 +164,7 @@ export async function executeDurableMutation(params: {
   const normPath = canonicalizeProjectPath(targetPath);
 
   // 1. Enforce least privilege and authorization boundary
+  const { assertAuthorizedToolMutation } = await import('./toolbox');
   await assertAuthorizedToolMutation(conversationId, normPath);
 
   // 2. Consume budget
@@ -120,17 +182,23 @@ export async function executeDurableMutation(params: {
   });
 
   // 3. Idempotency Check: Did this exact operation already commit?
-  const existingReceipt = committedReceipts.get(operationKey);
+  const existingRow = await prisma.durableMutation.findUnique({ where: { operationKey } });
+  const existingRecord = existingRow ? toOperationRecord(existingRow) : undefined;
+  const existingReceipt = existingRecord?.receipt;
   if (existingReceipt) {
     // Verify that observed file matches the receipt's content hash
     const currentFileContent = (await readVirtualFile(conversationId, normPath)) || '';
     if (computeSha256(currentFileContent) === existingReceipt.resultingContentHash) {
       return existingReceipt;
     }
+    existingRecord!.state = 'RECOVERY_REQUIRED';
+    existingRecord!.error = 'A previously committed mutation was retried after the target file changed.';
+    existingRecord!.updatedAt = new Date().toISOString();
+    await persistOperation(existingRecord!);
+    throw new RecoveryRequiredException(operationKey, normPath, existingRecord!.error);
   }
 
   // 4. Crash reconciliation for existing in-flight record
-  const existingRecord = operationRegistry.get(operationKey);
   if (existingRecord) {
     if (existingRecord.state === 'RECOVERY_REQUIRED') {
       throw new RecoveryRequiredException(
@@ -139,13 +207,11 @@ export async function executeDurableMutation(params: {
         'Mutation blocked: previous attempt left ambiguous state. Manual reconciliation or rollback required.'
       );
     }
-    if (existingRecord.state === 'APPLYING') {
-      // Reconcile observed state after crash
+    if (existingRecord.state === 'APPLYING' || existingRecord.state === 'INTENDED') {
+      // Reconcile the persisted operation after a process restart.
       const observedContent = (await readVirtualFile(conversationId, normPath)) || '';
       const observedHash = computeSha256(observedContent);
-      const targetHash = computeSha256(content);
-
-      if (opType === 'FILE_WRITE' && observedHash === targetHash) {
+      if (observedHash === existingRecord.expectedContentHash) {
         // Write succeeded before crash! Commit and return receipt.
         const resultingWorkspaceHash = await computeWorkspaceFingerprint(conversationId);
         const receipt: MutationReceipt = {
@@ -162,8 +228,25 @@ export async function executeDurableMutation(params: {
         existingRecord.state = 'COMMITTED';
         existingRecord.receipt = receipt;
         existingRecord.updatedAt = new Date().toISOString();
-        committedReceipts.set(operationKey, receipt);
+        await persistOperation(existingRecord);
         return receipt;
+      }
+      if (observedHash !== existingRecord.baseContentHash) {
+        existingRecord.state = 'RECOVERY_REQUIRED';
+        existingRecord.error = 'Observed content matches neither the recorded base nor expected result.';
+        existingRecord.updatedAt = new Date().toISOString();
+        await persistOperation(existingRecord);
+        throw new RecoveryRequiredException(operationKey, normPath, existingRecord.error);
+      }
+    }
+    if (existingRecord.state === 'FAILED') {
+      const observedContent = (await readVirtualFile(conversationId, normPath)) || '';
+      if (computeSha256(observedContent) !== existingRecord.baseContentHash) {
+        existingRecord.state = 'RECOVERY_REQUIRED';
+        existingRecord.error = 'Failed mutation retry found a workspace state different from its recorded base.';
+        existingRecord.updatedAt = new Date().toISOString();
+        await persistOperation(existingRecord);
+        throw new RecoveryRequiredException(operationKey, normPath, existingRecord.error);
       }
     }
   }
@@ -176,24 +259,45 @@ export async function executeDurableMutation(params: {
     );
   }
 
+  const baseContent = (await readVirtualFile(conversationId, normPath)) || '';
+  let expectedContent = content;
+  if (opType === 'DIFF_PATCH' && diffRange) {
+    const lines = baseContent.split('\n');
+    const startLine = Math.max(1, diffRange.startLine);
+    const endLine = Math.max(startLine, diffRange.endLine);
+    if (startLine > lines.length + 1) {
+      throw new Error(`applyDiff failed: startLine ${startLine} exceeds total lines (${lines.length}) in "${normPath}".`);
+    }
+    const start = startLine - 1;
+    const end = Math.min(endLine - 1, lines.length - 1);
+    if (start === lines.length) lines.push(content);
+    else lines.splice(start, end - start + 1, content);
+    expectedContent = lines.join('\n');
+  }
+
   // 5. Lifecycle Step 1 & 2: Record durable operation with INTENDED state
   const opRecord: DurableOperationRecord = {
     operationKey,
     conversationId,
     pipelineRunId,
+    stageExecutionId,
     opType,
     targetPath: normPath,
     state: 'INTENDED',
     intendedContent: content,
+    baseContentHash: computeSha256(baseContent),
+    expectedContentHash: computeSha256(expectedContent),
     diffRange,
     baseWorkspaceHash,
     updatedAt: new Date().toISOString(),
   };
-  operationRegistry.set(operationKey, opRecord);
+  await persistOperation(opRecord);
 
   // 6. Transition to APPLYING
   opRecord.state = 'APPLYING';
   opRecord.updatedAt = new Date().toISOString();
+  await persistOperation(opRecord);
+  await mutationFaultInjector?.('APPLYING');
 
   try {
     // 7. Apply mutation through locked VFS
@@ -204,6 +308,7 @@ export async function executeDurableMutation(params: {
     } else {
       throw new Error(`Unsupported mutation opType: ${opType}`);
     }
+    await mutationFaultInjector?.('APPLIED');
 
     // 8. Verify post-mutation state
     const postWriteContent = (await readVirtualFile(conversationId, normPath)) || '';
@@ -226,7 +331,7 @@ export async function executeDurableMutation(params: {
     opRecord.state = 'COMMITTED';
     opRecord.receipt = receipt;
     opRecord.updatedAt = new Date().toISOString();
-    committedReceipts.set(operationKey, receipt);
+    await persistOperation(opRecord);
 
     return receipt;
   } catch (err: any) {
@@ -234,10 +339,13 @@ export async function executeDurableMutation(params: {
     const postCheckContent = (await readVirtualFile(conversationId, normPath)) || '';
     const postCheckHash = computeSha256(postCheckContent);
 
-    if (postCheckHash !== computeSha256(content)) {
-      opRecord.state = 'RECOVERY_REQUIRED';
+    if (postCheckHash === opRecord.expectedContentHash) {
+      // Keep the operation reconcilable: a retry will observe the expected
+      // content and commit the receipt without applying the edit a second time.
+      opRecord.state = 'APPLYING';
       opRecord.error = err.message;
       opRecord.updatedAt = new Date().toISOString();
+      await persistOperation(opRecord);
       throw new RecoveryRequiredException(
         operationKey,
         normPath,
@@ -245,22 +353,67 @@ export async function executeDurableMutation(params: {
       );
     }
 
+    if (postCheckHash !== opRecord.baseContentHash) {
+      opRecord.state = 'RECOVERY_REQUIRED';
+      opRecord.error = err.message;
+      opRecord.updatedAt = new Date().toISOString();
+      await persistOperation(opRecord);
+      throw new RecoveryRequiredException(
+        operationKey,
+        normPath,
+        `Mutation failed with an unrecognized workspace state: ${err.message}`
+      );
+    }
+
     opRecord.state = 'FAILED';
     opRecord.error = err.message;
     opRecord.updatedAt = new Date().toISOString();
+    await persistOperation(opRecord);
     throw err;
   }
 }
 
-export function getOperationRecord(operationKey: string): DurableOperationRecord | undefined {
-  return operationRegistry.get(operationKey);
+async function withOperationLock<T>(operationKey: string, operation: () => Promise<T>): Promise<T> {
+  const previous = operationLocks.get(operationKey) || Promise.resolve();
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => { release = resolve; });
+  const queued = previous.then(() => current);
+  operationLocks.set(operationKey, queued);
+  await previous;
+  try {
+    return await operation();
+  } finally {
+    release();
+    if (operationLocks.get(operationKey) === queued) operationLocks.delete(operationKey);
+  }
 }
 
-export function getCommittedReceipt(operationKey: string): MutationReceipt | undefined {
-  return committedReceipts.get(operationKey);
+export async function executeDurableMutation(params: Parameters<typeof executeDurableMutationLocked>[0]): Promise<MutationReceipt> {
+  const opPayload = params.diffRange
+    ? `${params.diffRange.startLine}-${params.diffRange.endLine}:${params.content}`
+    : params.content;
+  const operationKey = generateOperationKey({
+    conversationId: params.conversationId,
+    pipelineRunId: params.pipelineRunId,
+    opType: params.opType,
+    targetPath: params.targetPath,
+    contentOrDiff: opPayload,
+  });
+  return withOperationLock(operationKey, () => executeDurableMutationLocked(params));
 }
 
-export function resetOperationRegistryForTest(): void {
-  operationRegistry.clear();
-  committedReceipts.clear();
+export async function getOperationRecord(operationKey: string): Promise<DurableOperationRecord | undefined> {
+  const row = await prisma.durableMutation.findUnique({ where: { operationKey } });
+  return row ? toOperationRecord(row) : undefined;
+}
+
+export async function getCommittedReceipt(operationKey: string): Promise<MutationReceipt | undefined> {
+  const row = await prisma.durableMutation.findUnique({ where: { operationKey } });
+  if (!row?.receiptJson) return undefined;
+  return JSON.parse(row.receiptJson) as MutationReceipt;
+}
+
+export async function resetOperationRegistryForTest(): Promise<void> {
+  mutationFaultInjector = null;
+  await prisma.durableMutation.deleteMany();
 }

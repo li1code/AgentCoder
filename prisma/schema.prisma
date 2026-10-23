@@ -591,4 +591,27 @@ model VerificationRun {
   @@index([pipelineRunId, cycle])
 }
 
+model DurableMutation {
+  operationKey      String   @id
+  conversationId    String
+  pipelineRunId     String
+  stageExecutionId  String?
+  opType            String
+  targetPath        String
+  state             String
+  intendedContent   String
+  baseContentHash   String
+  expectedContentHash String
+  diffStartLine     Int?
+  diffEndLine       Int?
+  baseWorkspaceHash String
+  receiptJson       String?
+  error             String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([conversationId, state])
+  @@index([pipelineRunId, state])
+}
+
 

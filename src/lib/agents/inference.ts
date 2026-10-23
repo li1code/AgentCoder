@@ -1,4 +1,5 @@
 import { prisma } from '../db';
+import { getOrCreateRunBudget } from './ruflo/budget-manager';
 
 // Ensure localhost bypasses any system proxies so Ollama connections aren't intercepted by environment proxies
 delete process.env.HTTP_PROXY;
@@ -44,6 +45,7 @@ interface InferenceOptions {
   timeoutMs?: number;
   signal?: AbortSignal;
   onChunk?: (text: string) => void;
+  runKey?: string;
 }
 
 import fs from 'fs';
@@ -147,7 +149,7 @@ export function cleanJsonResponse(text: string): string {
   return cleaned.trim();
 }
 
-export async function runInference(
+async function runInferenceInner(
   messages: Message[],
   options: InferenceOptions = {}
 ): Promise<string> {
@@ -747,6 +749,38 @@ function combineAbortSignals(...signals: AbortSignal[]): AbortSignal {
   }));
 
   return result;
+}
+
+export async function runInference(messages: Message[], options: InferenceOptions = {}): Promise<string> {
+  if (!options.runKey) return runInferenceInner(messages, options);
+
+  const budget = getOrCreateRunBudget(options.runKey);
+  const inputEstimate = Math.ceil(messages.reduce((sum, message) => sum + message.content.length, 0) / 4);
+  const remaining = budget.getRemainingTokens();
+  const allowedOutput = Math.min(options.maxTokens ?? remaining, Math.max(0, remaining - inputEstimate));
+  if (allowedOutput <= 0) {
+    budget.assertWithinBudget('model_call');
+    throw new Error('Budget Exhaustion Exception: no token budget remains for model output.');
+  }
+
+  const reservation = await budget.reserveModelCall(inputEstimate + allowedOutput);
+  let outputChars = 0;
+  try {
+    const response = await runInferenceInner(messages, {
+      ...options,
+      maxTokens: allowedOutput,
+      onChunk: (chunk) => {
+        outputChars += chunk.length;
+        options.onChunk?.(chunk);
+      },
+    });
+    if (outputChars === 0) outputChars = response.length;
+    reservation.commit(inputEstimate + Math.ceil(outputChars / 4));
+    return response;
+  } catch (error) {
+    reservation.release();
+    throw error;
+  }
 }
 
 let ollamaHeartbeatTimer: NodeJS.Timeout | null = null;

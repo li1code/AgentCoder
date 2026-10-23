@@ -70,6 +70,13 @@ export function validateActionProposal(
     return { valid: false, errors };
   }
 
+  if (!['low', 'medium', 'high'].includes(proposal.riskTier)) {
+    errors.push(`Policy Error: Unknown risk tier "${proposal.riskTier}" is not permitted.`);
+  }
+  if (typeof proposal.requiresApproval !== 'boolean') {
+    errors.push('Policy Error: requiresApproval must be an explicit boolean.');
+  }
+
   // 2. Objective and Rationale Non-Empty
   if (!proposal.objective || proposal.objective.trim().length < 5) {
     errors.push('Policy Error: Action proposal objective must be clear and non-empty.');
@@ -79,6 +86,10 @@ export function validateActionProposal(
   }
 
   // 3. Target Paths Authorization
+  const modifiesFiles = proposal.action === 'implement_change' || proposal.action === 'repair_failure';
+  if (modifiesFiles && (!proposal.targetFiles || proposal.targetFiles.length === 0)) {
+    errors.push('Authorization Error: File mutation actions must name at least one authorized target file.');
+  }
   if (proposal.targetFiles && proposal.targetFiles.length > 0) {
     const authorizedSet = new Set(
       context.authorizedFiles.map((f) => f.replace(/\\/g, '/').toLowerCase())
@@ -87,8 +98,7 @@ export function validateActionProposal(
       try {
         const norm = canonicalizeProjectPath(tf).toLowerCase();
         if (
-          proposal.action === 'implement_change' ||
-          proposal.action === 'repair_failure'
+          modifiesFiles
         ) {
           if (!authorizedSet.has(norm)) {
             errors.push(`Authorization Error: Target file "${tf}" is not in the approved workspace file set.`);
@@ -101,6 +111,9 @@ export function validateActionProposal(
   }
 
   // 4. Risk Gate
+  if (proposal.requiresApproval && proposal.riskTier !== 'high' && !context.riskApprovalGranted) {
+    errors.push('Approval Gate Error: This action requires explicit human approval before execution.');
+  }
   if (proposal.riskTier === 'high' && !context.riskApprovalGranted) {
     errors.push('Risk Gate Error: High-risk action requires explicit human approval before execution.');
   }
@@ -212,8 +225,8 @@ export class BoundedAdaptiveCoordinator {
     this.budget.assertWithinBudget('selectNextAction');
 
     // Run verification to gather current evidence
-    const verifyResult = await runFullWorkspaceTester(this.conversationId, 1);
     this.budget.recordVerificationRun();
+    const verifyResult = await runFullWorkspaceTester(this.conversationId, 1);
 
     if (verifyResult.success) {
       return {
@@ -261,13 +274,17 @@ export class BoundedAdaptiveCoordinator {
       return { proposal, validation };
     }
 
-    let success = true;
+    // An action without an executor is not an executed action. Treat it as a
+    // failed outcome so callers cannot report success based only on a proposal.
+    let success = false;
     let failureSignature: string | undefined;
 
     if (actionHandler) {
       const execResult = await actionHandler(proposal);
       success = execResult.success;
       failureSignature = execResult.failureSignature;
+    } else {
+      failureSignature = `NO_ACTION_HANDLER:${proposal.action}`;
     }
 
     const outcome = this.stagnationDetector.recordOutcome({

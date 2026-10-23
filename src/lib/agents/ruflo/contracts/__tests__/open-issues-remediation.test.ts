@@ -7,7 +7,7 @@ import {
   getAuthenticatedSession,
   verifyConversationOwnership,
 } from '../../../../auth';
-import { toPublicLLMSettings } from '../../../../../app/api/settings/route';
+import { toPublicLLMSettings } from '../../../../settings-projection';
 import { POST as resumePost } from '../../../../../app/api/pipeline/resume/route';
 import { validateSecurityGate } from '../../security-gate';
 import { evaluateFinalPipelineGate } from '../../final-gate';

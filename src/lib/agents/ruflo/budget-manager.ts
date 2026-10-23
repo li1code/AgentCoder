@@ -64,6 +64,7 @@ export class BudgetManager {
   private readonly startTime: number;
   private modelCalls: number = 0;
   private totalTokens: number = 0;
+  private reservedTokens: number = 0;
   private toolCalls: number = 0;
   private repairAttempts: number = 0;
   private verificationRuns: number = 0;
@@ -115,7 +116,7 @@ export class BudgetManager {
     if (this.modelCalls + this.reservedModelCalls > this.limits.maxModelCalls) {
       reasons.push(`Model invocation limit exceeded (${this.modelCalls} calls > ${this.limits.maxModelCalls})`);
     }
-    if (this.totalTokens > this.limits.maxTotalTokens) {
+    if (this.totalTokens + this.reservedTokens > this.limits.maxTotalTokens) {
       reasons.push(`Token limit exceeded (${this.totalTokens} tokens > ${this.limits.maxTotalTokens})`);
     }
     if (this.toolCalls + this.reservedToolCalls > this.limits.maxToolCalls) {
@@ -151,6 +152,10 @@ export class BudgetManager {
     }
   }
 
+  public getRemainingTokens(): number {
+    return Math.max(0, this.limits.maxTotalTokens - this.totalTokens - this.reservedTokens);
+  }
+
   /**
    * Concurrency-safe reservation for a model invocation.
    * Ensures parallel steps cannot jointly overspend the shared budget.
@@ -161,6 +166,12 @@ export class BudgetManager {
   }> {
     return this.withLock(() => {
       this.assertWithinBudget('reserveModelCall');
+      if (estimatedTokens > this.limits.maxTotalTokens - this.totalTokens - this.reservedTokens) {
+        throw new BudgetExhaustionException(
+          [`Token reservation exceeds remaining budget (${estimatedTokens} requested, ${this.limits.maxTotalTokens - this.totalTokens - this.reservedTokens} remaining)`],
+          this.getSnapshot()
+        );
+      }
       if (this.modelCalls + this.reservedModelCalls + 1 > this.limits.maxModelCalls) {
         throw new BudgetExhaustionException(
           [`Model call limit reached (${this.modelCalls + this.reservedModelCalls + 1} > ${this.limits.maxModelCalls})`],
@@ -168,6 +179,7 @@ export class BudgetManager {
         );
       }
       this.reservedModelCalls += 1;
+      this.reservedTokens += estimatedTokens;
       let committed = false;
       let released = false;
 
@@ -176,6 +188,7 @@ export class BudgetManager {
           if (committed || released) return;
           committed = true;
           this.reservedModelCalls = Math.max(0, this.reservedModelCalls - 1);
+          this.reservedTokens = Math.max(0, this.reservedTokens - estimatedTokens);
           this.modelCalls += 1;
           this.totalTokens += Math.max(0, actualTokensUsed);
         },
@@ -183,6 +196,7 @@ export class BudgetManager {
           if (committed || released) return;
           released = true;
           this.reservedModelCalls = Math.max(0, this.reservedModelCalls - 1);
+          this.reservedTokens = Math.max(0, this.reservedTokens - estimatedTokens);
         },
       };
     });
@@ -248,19 +262,38 @@ export class BudgetManager {
 
 // Global registry of active budgets per run/conversation
 const activeBudgets = new Map<string, BudgetManager>();
+const runAliases = new Map<string, string>();
+
+/** Map all call-site identifiers for one pipeline run to the same budget. */
+export function bindRunBudgetAlias(canonicalRunId: string, ...aliases: string[]): BudgetManager {
+  const resolvedCanonical = runAliases.get(canonicalRunId) || canonicalRunId;
+  const existing = activeBudgets.get(resolvedCanonical) ||
+    aliases.map((alias) => activeBudgets.get(runAliases.get(alias) || alias)).find(Boolean);
+  const budget = existing || new BudgetManager();
+  activeBudgets.set(resolvedCanonical, budget);
+  for (const alias of aliases) {
+    runAliases.set(alias, resolvedCanonical);
+  }
+  return budget;
+}
 
 export function getOrCreateRunBudget(
   runKey: string,
   customLimits?: Partial<BudgetLimits>
 ): BudgetManager {
-  let budget = activeBudgets.get(runKey);
+  const canonicalKey = runAliases.get(runKey) || runKey;
+  let budget = activeBudgets.get(canonicalKey);
   if (!budget) {
     budget = new BudgetManager(customLimits);
-    activeBudgets.set(runKey, budget);
+    activeBudgets.set(canonicalKey, budget);
   }
   return budget;
 }
 
 export function clearRunBudget(runKey: string): void {
-  activeBudgets.delete(runKey);
+  const canonicalKey = runAliases.get(runKey) || runKey;
+  activeBudgets.delete(canonicalKey);
+  for (const [alias, target] of runAliases) {
+    if (alias === runKey || target === canonicalKey) runAliases.delete(alias);
+  }
 }

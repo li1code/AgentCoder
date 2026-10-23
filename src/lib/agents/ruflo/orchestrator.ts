@@ -107,7 +107,8 @@ async function handleInfrastructurePause(
 
 async function classifyIsSoftwareRequest(
   prompt: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  runKey?: string
 ): Promise<{ isSoftware: boolean; reason: string | null }> {
   try {
     const config = await getLLMConfig();
@@ -126,7 +127,8 @@ Do not output any markdown code blocks, explanation text, or extra characters. R
         format: 'json',
         maxTokens: 150,
         timeoutMs: 120000,
-        signal
+        signal,
+        runKey
       }
     );
 
@@ -467,7 +469,8 @@ export interface ThinkingDecision {
 export async function orchestratorThinkDebugger(
   errorLog: string,
   retryCount: number,
-  maxRetries: number
+  maxRetries: number,
+  runKey?: string
 ): Promise<ThinkingDecision> {
   if (retryCount >= maxRetries) {
     return { action: 'ABORT', reason: `Max retries (${maxRetries}) exceeded` };
@@ -495,7 +498,7 @@ Rules:
         { role: 'system', content: 'You are a build error triage bot.' },
         { role: 'user', content: thinkingPrompt },
       ],
-      { temperature: 0.1, format: 'json', maxTokens: 100 }
+      { temperature: 0.1, format: 'json', maxTokens: 100, runKey }
     );
     const cleaned = cleanJsonResponse(response);
     const parsed = JSON.parse(cleaned);
@@ -1307,6 +1310,7 @@ export async function runAgent(
       maxTokens: budget,
       timeoutMs,
       signal,
+      runKey: conversationId,
       onChunk: (chunk: string) => {
         tokenCount += Math.max(1, Math.round(chunk.length / 4));
         chunkBuffer += chunk;
@@ -1459,7 +1463,7 @@ export async function generateStageCandidate(params: {
       { role: 'system', content: AGENT_DEFS[params.agentName as keyof typeof AGENT_DEFS]?.systemPrompt || '' },
       { role: 'user', content: `${params.userPromptText}\n\n[CONTEXT]\n${contextStr}` },
     ],
-    { signal: params.executionSignal }
+    { signal: params.executionSignal, runKey: params.conversationId }
   );
 
   const content = sanitizeStageOutput(result, EXPECTED_FIRST_HEADERS[params.agentName]);
@@ -1569,7 +1573,7 @@ export async function runOrchestrator(
 
     // Classification Gate (skip if resuming from mid-pipeline stage)
     if (!startStage) {
-      const classification = await classifyIsSoftwareRequest(userPrompt, executionSignal);
+      const classification = await classifyIsSoftwareRequest(userPrompt, executionSignal, conversationId);
       if (!classification.isSoftware) {
         emit({
           type: 'PIPELINE_ERROR',
@@ -1603,7 +1607,8 @@ export async function runOrchestrator(
     const executionStages = startIndex >= 0 ? STAGES.slice(startIndex) : STAGES;
 
     const pipelineRun = await prisma.pipelineRun.findUnique({ where: { conversationId } });
-    const runId = pipelineRun?.id || '';
+    const runId = pipelineRun?.id || conversationId;
+    bindRunBudgetAlias(runId, conversationId);
 
     let debuggerExecutedInRun = false;
 
@@ -1903,6 +1908,7 @@ import {
 } from './adaptive-coordinator';
 import {
   BudgetLimits,
+  bindRunBudgetAlias,
   getOrCreateRunBudget,
 } from './budget-manager';
 
@@ -1913,7 +1919,9 @@ export async function runAdaptiveOrchestrator(
   signal?: AbortSignal,
   budgetLimits?: Partial<BudgetLimits>
 ): Promise<CoordinatorRunResult> {
-  const budget = getOrCreateRunBudget(conversationId, budgetLimits);
+  const adaptiveRunId = `run-adaptive-${Date.now()}`;
+  bindRunBudgetAlias(adaptiveRunId, conversationId);
+  const budget = getOrCreateRunBudget(adaptiveRunId, budgetLimits);
   const authorized = await loadAuthorizedFileSet(conversationId).catch(() => ({
     authorizedFiles: [],
     blueprintFiles: [],
@@ -1924,7 +1932,7 @@ export async function runAdaptiveOrchestrator(
 
   const coordinator = new BoundedAdaptiveCoordinator({
     conversationId,
-    pipelineRunId: `run-adaptive-${Date.now()}`,
+    pipelineRunId: adaptiveRunId,
     authorizedFiles: authorized.authorizedFiles,
     budget,
   });
