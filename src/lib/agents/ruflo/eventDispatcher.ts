@@ -131,7 +131,8 @@ Provide a targeted patch code to fix the defect. Output only JSON: {"file": "${f
       { role: 'system', content: specialistPrompt }
     ], {
       temperature: 0.1,
-      format: 'json'
+      format: 'json',
+      runKey: conversationId,
     });
 
     const cleaned = cleanJsonResponse(responseText);

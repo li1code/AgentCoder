@@ -11,11 +11,15 @@ import {
   BudgetManager,
   BudgetExhaustionException,
   DEFAULT_BUDGET_LIMITS,
+  bindRunBudgetAlias,
+  getOrCreateRunBudget,
 } from '../../budget-manager';
 import {
   executeDurableMutation,
   generateOperationKey,
   computeSha256,
+  getOperationRecord,
+  setMutationFaultInjectorForTest,
   resetOperationRegistryForTest,
   RecoveryRequiredException,
 } from '../../mutation-manager';
@@ -62,14 +66,15 @@ describe('AutoCoder Agentic Software Builder Vision Suite (Phases 1-4 & F-01–F
   });
 
   after(async () => {
+    await prisma.durableMutation.deleteMany({ where: { conversationId: testConvId } });
     await prisma.artifactVersion.deleteMany({ where: { conversationId: testConvId } });
     await prisma.virtualFile.deleteMany({ where: { conversationId: testConvId } });
     await prisma.pipelineRun.deleteMany({ where: { conversationId: testConvId } });
     await prisma.conversation.deleteMany({ where: { id: testConvId } });
   });
 
-  beforeEach(() => {
-    resetOperationRegistryForTest();
+  beforeEach(async () => {
+    await resetOperationRegistryForTest();
   });
 
   // ─── 1. Security Boundaries & Strict Canonical Paths (F-01, F-05, F-03) ───
@@ -181,6 +186,20 @@ describe('AutoCoder Agentic Software Builder Vision Suite (Phases 1-4 & F-01–F
     );
   });
 
+  it('Phase 1: model token reservations and run aliases share one hard budget', async () => {
+    const budget = new BudgetManager({ maxTotalTokens: 100 });
+    const first = await budget.reserveModelCall(80);
+    await assert.rejects(() => budget.reserveModelCall(21), /BudgetExhaustionException/);
+    first.release();
+
+    const aliasId = `budget-alias-${Date.now()}`;
+    const runId = `budget-run-${Date.now()}`;
+    const byAlias = getOrCreateRunBudget(aliasId);
+    const canonical = bindRunBudgetAlias(runId, aliasId);
+    assert.strictEqual(byAlias, canonical);
+    assert.strictEqual(getOrCreateRunBudget(runId), getOrCreateRunBudget(aliasId));
+  });
+
   // ─── 3. Durable Mutations, Receipts & Crash Reconciliation (Vision Sec. 10) ───
 
   it('Phase 1 & Sec. 10: executeDurableMutation generates receipts and prevents duplicate patch reapplication', async () => {
@@ -213,22 +232,116 @@ describe('AutoCoder Agentic Software Builder Vision Suite (Phases 1-4 & F-01–F
     assert.strictEqual(receipt1.targetPath, 'src/math.ts');
 
     // Executing the identical mutation again must return the existing receipt without re-applying (Idempotent!)
-    const receipt2 = await executeDurableMutation({
+    const duplicateReceipts = await Promise.all([1, 2].map(() => executeDurableMutation({
       conversationId: testConvId,
       pipelineRunId: testRunId,
       opType: 'FILE_WRITE',
       targetPath: 'src/math.ts',
       content: 'export function add(a: number, b: number) { return a + b + 0; }\n',
-    });
+    })));
+    const receipt2 = duplicateReceipts[0];
 
     assert.strictEqual(receipt1.operationKey, receipt2.operationKey);
+    assert.strictEqual(duplicateReceipts[1].operationKey, receipt2.operationKey);
     assert.strictEqual(receipt1.committedAt, receipt2.committedAt);
+
+    const persisted = await getOperationRecord(receipt1.operationKey);
+    assert.strictEqual(persisted?.state, 'COMMITTED');
+    assert.strictEqual(persisted?.receipt?.operationKey, receipt1.operationKey);
+
+    // Inject a crash after the VFS write but before the receipt update. A fresh
+    // invocation must reconcile the persisted APPLYING record without replay.
+    const recoveredContent = 'export function add(a: number, b: number) { return a + b + 1; }\n';
+    setMutationFaultInjectorForTest((phase) => {
+      if (phase === 'APPLIED') throw new Error('injected process interruption after VFS write');
+    });
+    await assert.rejects(() => executeDurableMutation({
+      conversationId: testConvId,
+      pipelineRunId: testRunId,
+      opType: 'FILE_WRITE',
+      targetPath: 'src/math.ts',
+      content: recoveredContent,
+    }), (error: any) => error instanceof RecoveryRequiredException);
+    setMutationFaultInjectorForTest(null);
+    const faultedRecord = await getOperationRecord(generateOperationKey({
+      conversationId: testConvId,
+      pipelineRunId: testRunId,
+      opType: 'FILE_WRITE',
+      targetPath: 'src/math.ts',
+      contentOrDiff: recoveredContent,
+    }));
+    assert.strictEqual(faultedRecord?.state, 'APPLYING');
+    const recovered = await executeDurableMutation({
+      conversationId: testConvId,
+      pipelineRunId: testRunId,
+      opType: 'FILE_WRITE',
+      targetPath: 'src/math.ts',
+      content: recoveredContent,
+    });
+    assert.strictEqual(recovered.resultingContentHash, computeSha256(recoveredContent));
+    assert.strictEqual((await getOperationRecord(recovered.operationKey))?.state, 'COMMITTED');
+
+    // Retrying an older committed operation after a later write must fail closed
+    // instead of restoring stale content over the newer workspace state.
+    await assert.rejects(() => executeDurableMutation({
+      conversationId: testConvId,
+      pipelineRunId: testRunId,
+      opType: 'FILE_WRITE',
+      targetPath: 'src/math.ts',
+      content: 'export function add(a: number, b: number) { return a + b + 0; }\n',
+    }), (error: any) => error instanceof RecoveryRequiredException);
+
+    const patchedContent = 'export function add(a: number, b: number) { return a + b + 2; }';
+    setMutationFaultInjectorForTest((phase) => {
+      if (phase === 'APPLIED') throw new Error('injected interruption after diff patch');
+    });
+    await assert.rejects(() => executeDurableMutation({
+      conversationId: testConvId,
+      pipelineRunId: testRunId,
+      opType: 'DIFF_PATCH',
+      targetPath: 'src/math.ts',
+      content: patchedContent,
+      diffRange: { startLine: 1, endLine: 1 },
+    }), (error: any) => error instanceof RecoveryRequiredException);
+    setMutationFaultInjectorForTest(null);
+    const recoveredDiff = await executeDurableMutation({
+      conversationId: testConvId,
+      pipelineRunId: testRunId,
+      opType: 'DIFF_PATCH',
+      targetPath: 'src/math.ts',
+      content: patchedContent,
+      diffRange: { startLine: 1, endLine: 1 },
+    });
+    assert.strictEqual(recoveredDiff.resultingContentHash, computeSha256(`${patchedContent}\n`));
+    assert.strictEqual(await readVirtualFile(testConvId, 'src/math.ts'), `${patchedContent}\n`);
   });
 
   // ─── 4. Production Authority & Release Exceptions (F-09, Vision Sec. 9.2) ──
 
   it('F-09: SecurityAuthorityService verifies cryptographic signature and rejects forged/stale exceptions', () => {
     const adminSecret = 'production-authority-secret-key-32chars!!';
+    const untrustedPayload = {
+      id: 'EX-untrusted',
+      conversationId: 'conv-123',
+      pipelineRunId: 'run-123',
+      workspaceHash: 'a'.repeat(64),
+      approverId: 'system-security-admin',
+      ruleId: 'HARDCODED_SECRET',
+      targetFile: 'src/config.ts',
+      reason: 'Test authority is not preconfigured',
+      expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+    };
+    const untrusted = {
+      ...untrustedPayload,
+      signature: securityAuthorityService.createSignature(untrustedPayload, adminSecret),
+    };
+    assert.strictEqual(securityAuthorityService.validateException(untrusted, untrustedPayload.workspaceHash).valid, false);
+
+    securityAuthorityService.registerApprover({
+      id: 'system-security-admin',
+      secret: adminSecret,
+      permissions: ['*'],
+    });
     const workspaceHash = 'a'.repeat(64);
 
     const validPayload = {
@@ -251,6 +364,9 @@ describe('AutoCoder Agentic Software Builder Vision Suite (Phases 1-4 & F-01–F
 
     const checkValid = securityAuthorityService.validateException(validException, workspaceHash);
     assert.strictEqual(checkValid.valid, true);
+
+    const changedReason = { ...validException, reason: 'Changed after signing' };
+    assert.strictEqual(securityAuthorityService.validateException(changedReason, workspaceHash).valid, false);
 
     // Forged signature must fail
     const forgedException: SecurityGateException = {
@@ -432,5 +548,43 @@ ${'c'.repeat(64)}
     assert.strictEqual(cycleResult.validation.valid, true);
     assert.strictEqual(cycleResult.outcome?.isStagnated, false);
     assert.strictEqual(cycleResult.outcome?.recommendation, 'CONTINUE');
+  });
+
+  it('Phase 3: adaptive actions without a registered handler cannot report success', async () => {
+    const coordinator = new BoundedAdaptiveCoordinator({
+      conversationId: testConvId,
+      pipelineRunId: testRunId,
+      authorizedFiles: ['src/math.ts'],
+    });
+    const proposal: ActionProposal = {
+      action: 'inspect_workspace',
+      objective: 'Inspect project structure and linter health',
+      rationale: 'Initial intake baseline before change',
+      riskTier: 'low',
+      requiresApproval: false,
+      successConditions: ['Inspection diagnostics collected'],
+    };
+
+    const result = await coordinator.executeCycle(proposal);
+    assert.strictEqual(result.validation.valid, true);
+    assert.strictEqual(result.outcome?.isStagnated, false);
+    assert.strictEqual(result.outcome?.recommendation, 'CONTINUE');
+  });
+
+  it('Phase 3: an explicit approval requirement blocks medium-risk actions without approval', () => {
+    const proposal: ActionProposal = {
+      action: 'design_change',
+      objective: 'Change the service boundary',
+      rationale: 'The current service boundary causes coupling',
+      riskTier: 'medium',
+      requiresApproval: true,
+      successConditions: ['The approved boundary is implemented'],
+    };
+    const result = validateActionProposal(proposal, {
+      authorizedFiles: ['src/index.ts'],
+      budget: new BudgetManager(),
+    });
+    assert.strictEqual(result.valid, false);
+    assert.ok(result.errors.some((error) => error.includes('requires explicit human approval')));
   });
 });

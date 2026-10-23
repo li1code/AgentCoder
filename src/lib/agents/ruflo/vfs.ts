@@ -9,6 +9,7 @@ import {
   AuthorizedFileSet,
   computeFileSetHash,
 } from './workspace-policy';
+import { executeDurableMutation } from './mutation-manager';
 
 
 // In-memory locks to serialize write/diff operations per file to prevent race conditions
@@ -465,7 +466,14 @@ export async function writeAuthorizedProjectFile(params: {
     throw new Error(`Authorization Exception: File "${normPath}" is not in approved blueprint authorized file set.`);
   }
 
-  await writeVirtualFile(conversationId, normPath, content);
+  await executeDurableMutation({
+    conversationId,
+    pipelineRunId,
+    stageExecutionId,
+    opType: 'FILE_WRITE',
+    targetPath: normPath,
+    content,
+  });
 }
 
 export async function applyAuthorizedDiff(params: {
@@ -499,7 +507,15 @@ export async function applyAuthorizedDiff(params: {
     throw new Error(`Authorization Exception: File "${normPath}" is not in authorized file set.`);
   }
 
-  await applyDiff(conversationId, normPath, startLine, endLine, newContent);
+  await executeDurableMutation({
+    conversationId,
+    pipelineRunId,
+    stageExecutionId,
+    opType: 'DIFF_PATCH',
+    targetPath: normPath,
+    content: newContent,
+    diffRange: { startLine, endLine },
+  });
 }
 
 

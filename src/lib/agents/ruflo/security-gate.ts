@@ -212,17 +212,13 @@ export interface EvaluatedSecurityGateWithExceptions {
 class SecurityAuthorityService {
   private approvers: Map<string, TrustedApprover> = new Map();
 
-  constructor() {
-    // Default system root approver for testing/development
-    this.registerApprover({
-      id: 'system-security-admin',
-      secret: 'production-authority-secret-key-32chars!!',
-      permissions: ['*'],
-      revoked: false,
-    });
-  }
-
   public registerApprover(approver: TrustedApprover): void {
+    if (!approver.id?.trim() || !approver.secret || approver.secret.trim().length < 32) {
+      throw new Error('Trusted approvers require an ID and an explicitly configured secret of at least 32 characters.');
+    }
+    if (!Array.isArray(approver.permissions) || approver.permissions.length === 0) {
+      throw new Error('Trusted approvers require at least one explicit rule permission.');
+    }
     this.approvers.set(approver.id, { ...approver });
   }
 
@@ -234,7 +230,20 @@ class SecurityAuthorityService {
   }
 
   public createSignature(payload: Omit<SecurityGateException, 'signature'>, secret: string): string {
-    const canonical = `${payload.id}:${payload.conversationId}:${payload.pipelineRunId}:${payload.workspaceHash}:${payload.approverId}:${payload.ruleId}:${payload.targetFile}:${payload.expiresAt}`;
+    if (!secret || secret.trim().length < 32) {
+      throw new Error('Security authority secret must be explicitly configured with at least 32 characters.');
+    }
+    const canonical = JSON.stringify({
+      id: payload.id,
+      conversationId: payload.conversationId,
+      pipelineRunId: payload.pipelineRunId,
+      workspaceHash: payload.workspaceHash,
+      approverId: payload.approverId,
+      ruleId: payload.ruleId,
+      targetFile: payload.targetFile.replace(/\\/g, '/').replace(/^\.\//, ''),
+      reason: payload.reason,
+      expiresAt: payload.expiresAt,
+    });
     return createHmac('sha256', secret).update(canonical).digest('hex');
   }
 
@@ -249,7 +258,8 @@ class SecurityAuthorityService {
     if (approver.revoked) {
       return { valid: false, error: `Approver authorization revoked: ${exception.approverId}` };
     }
-    if (new Date(exception.expiresAt).getTime() < Date.now()) {
+    const expiresAt = Date.parse(exception.expiresAt);
+    if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
       return { valid: false, error: `Security exception expired at ${exception.expiresAt}` };
     }
     if (exception.workspaceHash !== currentWorkspaceHash) {
