@@ -1,0 +1,15 @@
+.git
+.github
+.next
+node_modules
+projects
+dev.db
+*.db
+*.db-journal
+*.log
+scratch
+Generated logs
+generated projects
+stitch_interactive_srs_ui_template
+.DS_Store
+*.tsbuildinfo

@@ -13,6 +13,7 @@
     "test:contracts": "npx tsx --test --test-concurrency=1 src/lib/agents/ruflo/__tests__/*.test.ts src/lib/agents/ruflo/contracts/__tests__/*.test.ts"
   },
   "dependencies": {
+    "@google-cloud/vertexai": "^1.12.0",
     "@monaco-editor/react": "^4.7.0",
     "@prisma/adapter-better-sqlite3": "^7.8.0",
     "@prisma/client": "^7.8.0",

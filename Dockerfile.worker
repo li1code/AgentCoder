@@ -1,0 +1,28 @@
+# =========================================================================
+# AutoCoder Execution Worker Image (StackBlitz-like Docker Sandbox)
+# =========================================================================
+FROM node:24-bookworm-slim
+
+# Install core build and developer utilities
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash \
+    git \
+    curl \
+    ca-certificates \
+    python3 \
+    make \
+    g++ \
+    procps \
+    && rm -rf /var/lib/apt/lists/*
+
+# Pre-install common project runners and CLIs globally
+RUN npm install -g serve typescript tsx
+
+# Create workspace directory and ensure ownership by node user
+RUN mkdir -p /workspace && chown -R node:node /workspace
+
+USER node
+WORKDIR /workspace
+
+# Default idle command keeps the worker container alive for command execution
+CMD ["tail", "-f", "/dev/null"]

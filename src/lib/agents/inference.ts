@@ -52,13 +52,16 @@ import path from 'path';
 // Settings helper
 export async function getLLMConfig() {
   const defaults = {
-    provider: process.env.LLM_PROVIDER || 'ollama', // 'ollama' | 'openai' | 'anthropic'
+    provider: process.env.LLM_PROVIDER || 'ollama', // 'ollama' | 'openai' | 'anthropic' | 'vertex'
     ollamaHost: process.env.OLLAMA_HOST || 'http://127.0.0.1:11434',
     ollamaModel: process.env.OLLAMA_MODEL || 'llama3:8b-instruct',
     openaiApiKey: process.env.OPENAI_API_KEY || '',
     openaiModel: process.env.OPENAI_MODEL || 'gpt-4o-mini',
     anthropicApiKey: process.env.ANTHROPIC_API_KEY || '',
     anthropicModel: process.env.ANTHROPIC_MODEL || 'claude-3-5-sonnet-20241022',
+    vertexProjectId: process.env.VERTEX_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || '',
+    vertexLocation: process.env.VERTEX_LOCATION || process.env.GOOGLE_CLOUD_REGION || 'us-central1',
+    vertexModel: process.env.VERTEX_MODEL || 'gemini-1.5-pro',
   };
 
   const settingsPath = path.join(process.cwd(), 'settings.json');
@@ -71,6 +74,14 @@ export async function getLLMConfig() {
       console.error('Error reading settings.json, using defaults:', e);
     }
   }
+
+  // Explicit environment variables override local settings.json
+  if (process.env.LLM_PROVIDER) config.provider = process.env.LLM_PROVIDER;
+  if (process.env.VERTEX_PROJECT_ID) config.vertexProjectId = process.env.VERTEX_PROJECT_ID;
+  if (process.env.VERTEX_LOCATION) config.vertexLocation = process.env.VERTEX_LOCATION;
+  if (process.env.VERTEX_MODEL) config.vertexModel = process.env.VERTEX_MODEL;
+  if (process.env.OLLAMA_HOST) config.ollamaHost = process.env.OLLAMA_HOST;
+  if (process.env.OLLAMA_MODEL) config.ollamaModel = process.env.OLLAMA_MODEL;
 
   // Model fallback check: verify if the configured model is installed
   if (config.provider === 'ollama') {
@@ -534,6 +545,7 @@ function combineAbortSignals(...signals: AbortSignal[]): AbortSignal {
     if (config.provider === 'ollama') config.ollamaModel = options.model;
     else if (config.provider === 'openai') config.openaiModel = options.model;
     else if (config.provider === 'anthropic') config.anthropicModel = options.model;
+    else if (config.provider === 'vertex') config.vertexModel = options.model;
   }
 
   const effectiveTimeout = options.timeoutMs ? Math.max(options.timeoutMs, 600_000) : 1440000000; // Minimum 10 minutes timeout for inference operations
@@ -731,12 +743,79 @@ function combineAbortSignals(...signals: AbortSignal[]): AbortSignal {
 
     const data = await res.json();
     result = data.content[0].text;
+  } else if (config.provider === 'vertex') {
+    const projectId = config.vertexProjectId || process.env.VERTEX_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT;
+    if (!projectId) {
+      throw new Error(
+        'Vertex AI configuration error: VERTEX_PROJECT_ID or GOOGLE_CLOUD_PROJECT environment variable is required.'
+      );
+    }
+    const location = config.vertexLocation || process.env.VERTEX_LOCATION || process.env.GOOGLE_CLOUD_REGION || 'us-central1';
+    const modelName = config.vertexModel || 'gemini-1.5-pro';
+
+    const { VertexAI } = await import('@google-cloud/vertexai');
+    const vertexAI = new VertexAI({
+      project: projectId,
+      location,
+    });
+
+    const systemMessage = messages.find((m) => m.role === 'system');
+    const nonSystemMessages = messages.filter((m) => m.role !== 'system');
+
+    const generativeModel = vertexAI.getGenerativeModel({
+      model: modelName,
+      generationConfig: {
+        temperature: temp,
+        ...(options.maxTokens ? { maxOutputTokens: options.maxTokens } : {}),
+        ...(isJson ? { responseMimeType: 'application/json' } : {}),
+      },
+      systemInstruction: systemMessage?.content || undefined,
+    });
+
+    const contents = nonSystemMessages.map((m) => ({
+      role: m.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: m.content }],
+    }));
+
+    if (contents.length === 0) {
+      contents.push({ role: 'user', parts: [{ text: 'Generate the required output.' }] });
+    }
+
+    try {
+      const responseStream = await generativeModel.generateContentStream({ contents });
+      let accumulatedContent = '';
+
+      for await (const chunk of responseStream.stream) {
+        const text = chunk.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        if (text) {
+          accumulatedContent += text;
+          if (options.onChunk) {
+            options.onChunk(text);
+          }
+        }
+      }
+
+      const response = await responseStream.response;
+      result = response.candidates?.[0]?.content?.parts?.[0]?.text || accumulatedContent;
+    } catch (err: any) {
+      if (err.message?.includes('token') || err.message?.includes('quota') || err.message?.includes('ResourceExhausted')) {
+        throw new Error(`Vertex AI Context/Quota Limit Exception: ${err.message}`);
+      }
+      throw new Error(`Vertex AI inference failed: ${err.message}`);
+    }
   } else {
     throw new Error(`Unsupported LLM provider: ${config.provider}`);
   }
 
   const durationMs = Date.now() - startTime;
-  const resolvedModel = config.provider === 'ollama' ? config.ollamaModel : (config.provider === 'openai' ? config.openaiModel : config.anthropicModel);
+  const resolvedModel =
+    config.provider === 'ollama'
+      ? config.ollamaModel
+      : config.provider === 'openai'
+      ? config.openaiModel
+      : config.provider === 'anthropic'
+      ? config.anthropicModel
+      : config.vertexModel;
   console.log('[InferenceTrace]', JSON.stringify({
     provider: config.provider,
     requestedModel: options.model || resolvedModel,

@@ -17,6 +17,7 @@ import {
   isControlPlaneArtifact,
   normalizeProjectPath,
 } from './workspace-policy';
+import { getExecutionBackend } from './execution';
 
 const execFileAsync = promisify(execFile);
 
@@ -74,43 +75,14 @@ async function runProjectBinary(
   conversationId: string,
   timeoutMs: number = 180000
 ) {
-  const projectDir = path.join(process.cwd(), 'projects', conversationId);
-  if (!fs.existsSync(projectDir)) {
-    return {
-      success: false,
-      exitCode: 1,
-      stdout: '',
-      stderr: `Project directory does not exist for conversation ${conversationId}.`,
-    };
-  }
-  const resolvedBin =
-    process.platform === 'win32' && (binary === 'npm' || binary === 'npx')
-      ? `${binary}.cmd`
-      : binary;
-  try {
-    const { stdout, stderr } = await execFileAsync(resolvedBin, args, {
-      cwd: projectDir,
-      timeout: timeoutMs,
-      windowsHide: true,
-      env: {
-        PATH: process.env.PATH,
-        SystemRoot: process.env.SystemRoot,
-        HOME: process.env.HOME || process.env.USERPROFILE,
-        USERPROFILE: process.env.USERPROFILE,
-        TEMP: process.env.TEMP,
-        TMP: process.env.TMP,
-        NODE_ENV: 'development',
-      },
-    });
-    return { success: true, exitCode: 0, stdout: (stdout || '').trim(), stderr: (stderr || '').trim() };
-  } catch (err: any) {
-    return {
-      success: false,
-      exitCode: typeof err.code === 'number' ? err.code : 1,
-      stdout: (err.stdout || '').trim(),
-      stderr: (err.stderr || err.message || '').trim(),
-    };
-  }
+  const backend = getExecutionBackend();
+  const result = await backend.executeCommand(conversationId, binary, args, { timeoutMs });
+  return {
+    success: result.success,
+    exitCode: result.exitCode,
+    stdout: result.stdout,
+    stderr: result.stderr,
+  };
 }
 
 export interface ToolParameter {

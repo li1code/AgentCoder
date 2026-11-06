@@ -12,6 +12,9 @@ export interface PublicLLMSettings {
   anthropicModel: string | null;
   openaiApiKeyConfigured: boolean;
   anthropicApiKeyConfigured: boolean;
+  vertexProjectId?: string | null;
+  vertexLocation?: string | null;
+  vertexModel?: string | null;
 }
 
 export function toPublicLLMSettings(config: {
@@ -22,6 +25,9 @@ export function toPublicLLMSettings(config: {
   openaiModel?: string;
   anthropicApiKey?: string;
   anthropicModel?: string;
+  vertexProjectId?: string;
+  vertexLocation?: string;
+  vertexModel?: string;
 }): PublicLLMSettings {
   return {
     provider: config.provider ?? null,
@@ -31,6 +37,9 @@ export function toPublicLLMSettings(config: {
     anthropicModel: config.anthropicModel ?? null,
     openaiApiKeyConfigured: Boolean(config.openaiApiKey && config.openaiApiKey.trim().length > 0),
     anthropicApiKeyConfigured: Boolean(config.anthropicApiKey && config.anthropicApiKey.trim().length > 0),
+    vertexProjectId: config.vertexProjectId ?? null,
+    vertexLocation: config.vertexLocation ?? null,
+    vertexModel: config.vertexModel ?? null,
   };
 }
 
@@ -75,6 +84,9 @@ export async function POST(request: NextRequest) {
       openaiModel: typeof body.openaiModel === 'string' ? body.openaiModel : existing.openaiModel,
       anthropicApiKey: typeof body.anthropicApiKey === 'string' && body.anthropicApiKey.trim() !== '' ? body.anthropicApiKey.trim() : existing.anthropicApiKey,
       anthropicModel: typeof body.anthropicModel === 'string' ? body.anthropicModel : existing.anthropicModel,
+      vertexProjectId: typeof body.vertexProjectId === 'string' ? body.vertexProjectId.trim() : existing.vertexProjectId,
+      vertexLocation: typeof body.vertexLocation === 'string' ? body.vertexLocation.trim() : existing.vertexLocation,
+      vertexModel: typeof body.vertexModel === 'string' ? body.vertexModel.trim() : existing.vertexModel,
     };
 
     fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf8');

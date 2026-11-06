@@ -23,6 +23,9 @@ export default function SettingsPage() {
   const [openaiModel, setOpenaiModel] = useState('gpt-4o-mini');
   const [anthropicApiKey, setAnthropicApiKey] = useState('');
   const [anthropicModel, setAnthropicModel] = useState('claude-3-5-sonnet-20241022');
+  const [vertexProjectId, setVertexProjectId] = useState('');
+  const [vertexLocation, setVertexLocation] = useState('us-central1');
+  const [vertexModel, setVertexModel] = useState('gemini-1.5-pro');
   const [temperature, setTemperature] = useState(0.2);
 
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'failed'>('idle');
@@ -43,6 +46,9 @@ export default function SettingsPage() {
         if (data.openaiModel) setOpenaiModel(data.openaiModel);
         if (data.anthropicApiKey) setAnthropicApiKey(data.anthropicApiKey);
         if (data.anthropicModel) setAnthropicModel(data.anthropicModel);
+        if (data.vertexProjectId) setVertexProjectId(data.vertexProjectId);
+        if (data.vertexLocation) setVertexLocation(data.vertexLocation);
+        if (data.vertexModel) setVertexModel(data.vertexModel);
       })
       .catch(() => {});
   }, []);
@@ -63,6 +69,9 @@ export default function SettingsPage() {
           openaiModel,
           anthropicApiKey,
           anthropicModel,
+          vertexProjectId,
+          vertexLocation,
+          vertexModel,
         }),
       });
 
@@ -107,6 +116,7 @@ export default function SettingsPage() {
               onChange={(e) => setProvider(e.target.value)}
               className="bg-slate-950 border border-slate-700 rounded p-2 text-xs font-mono text-on-surface focus:border-electric-indigo outline-none"
             >
+              <option value="vertex">Google Vertex AI (GCP Cloud with ADC)</option>
               <option value="ollama">Ollama (Local LLM)</option>
               <option value="openai">OpenAI API (Cloud)</option>
               <option value="anthropic">Anthropic API (Cloud)</option>
@@ -114,6 +124,59 @@ export default function SettingsPage() {
           </div>
 
           {/* Conditional provider details */}
+          {provider === 'vertex' && (
+            <div className="border border-indigo-500/30 bg-slate-950/60 p-4 rounded flex flex-col gap-4">
+              <div className="flex justify-between items-center border-b border-slate-800 pb-2">
+                <span className="text-xs font-bold text-indigo-300 flex items-center gap-1.5 font-mono">
+                  <Cloud className="w-4 h-4 text-indigo-400" /> Google Cloud Vertex AI
+                </span>
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                  ADC Enabled
+                </span>
+              </div>
+
+              <div className="text-[11px] text-slate-400 leading-relaxed bg-indigo-950/20 border border-indigo-500/20 rounded p-2.5">
+                On GCP Compute Engine, authentication uses <strong>Application Default Credentials (ADC)</strong> via the VM service account. No secret keys or JSON credentials are required.
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-bold text-slate-500 font-mono">GCP Project ID</label>
+                  <input
+                    type="text"
+                    value={vertexProjectId}
+                    onChange={(e) => setVertexProjectId(e.target.value)}
+                    className="bg-slate-950 border border-slate-700 rounded p-2 text-xs font-mono text-on-surface focus:border-electric-indigo outline-none"
+                    placeholder="e.g. my-autocoder-project"
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-bold text-slate-500 font-mono">GCP Region</label>
+                  <input
+                    type="text"
+                    value={vertexLocation}
+                    onChange={(e) => setVertexLocation(e.target.value)}
+                    className="bg-slate-950 border border-slate-700 rounded p-2 text-xs font-mono text-on-surface focus:border-electric-indigo outline-none"
+                    placeholder="e.g. us-central1"
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-bold text-slate-500 font-mono">Vertex Model</label>
+                <select
+                  value={vertexModel}
+                  onChange={(e) => setVertexModel(e.target.value)}
+                  className="bg-slate-950 border border-slate-700 rounded p-2 text-xs font-mono text-on-surface focus:border-electric-indigo outline-none"
+                >
+                  <option value="gemini-1.5-pro">Gemini 1.5 Pro (1M+ context - Recommended for full codebase synthesis)</option>
+                  <option value="gemini-1.5-flash">Gemini 1.5 Flash (Ultra-fast, cost-effective)</option>
+                  <option value="gemini-2.0-flash">Gemini 2.0 Flash (Next-gen frontier speed &amp; reasoning)</option>
+                </select>
+              </div>
+            </div>
+          )}
+
           {provider === 'ollama' && (
             <div className="border border-slate-800 bg-slate-950/40 p-4 rounded flex flex-col gap-4">
               <div className="flex justify-between items-center border-b border-slate-800 pb-2">

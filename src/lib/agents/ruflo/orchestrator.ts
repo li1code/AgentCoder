@@ -38,6 +38,7 @@ import { commitAcceptedArtifact, findReusableAcceptedArtifact, refreshCoderWorks
 import { validateStageCandidate } from './stage-acceptance';
 import { createContentHash } from './contracts/fingerprints';
 import { normalizeProjectPath } from './workspace-policy';
+import { getExecutionBackend } from './execution';
 
 
 // Global Event Emitter for decoupling browser SSE streams from background Node pipeline compilation
@@ -65,6 +66,8 @@ export async function abortPipelineExecution(conversationId: string): Promise<vo
       update: { state: 'CANCELLED' },
       create: { conversationId, state: 'CANCELLED' },
     });
+    // Deterministic execution worker cleanup on cancellation
+    await getExecutionBackend().cleanupWorkspace(conversationId).catch(() => {});
   } catch (e) {
     console.error(`Failed to update database status to Cancelled for ${conversationId}:`, e);
   }
@@ -406,6 +409,47 @@ export function extractDependencyInterface(filePath: string, content: string): s
   return content.substring(0, 300);
 }
 
+export type TargetLanguagePolicy = {
+  language: 'javascript' | 'typescript' | 'html' | 'css' | 'json' | 'markdown' | 'unknown';
+  rules: string[];
+};
+
+export function getTargetLanguagePolicy(targetFile: string): TargetLanguagePolicy {
+  const ext = path.extname(targetFile).toLowerCase();
+  if (ext === '.js' || ext === '.jsx') {
+    return {
+      language: 'javascript',
+      rules: [
+        'JavaScript (ECMAScript) only. Do NOT emit TypeScript syntax.',
+        'Do NOT use `as Type` assertions, type annotations (`: string`), interfaces, or type aliases.',
+        'For DOM properties (.value, .reset, .dataset), narrow at runtime using `if (el instanceof HTMLInputElement)` or `document.querySelector`.',
+        'JSDoc comments (`/** @type {HTMLInputElement} */`) are permitted if syntactically valid JavaScript.',
+      ],
+    };
+  }
+  if (ext === '.ts' || ext === '.tsx') {
+    return {
+      language: 'typescript',
+      rules: [
+        'TypeScript syntax permitted. Adhere strictly to project tsconfig and interface contracts.',
+      ],
+    };
+  }
+  if (ext === '.html') {
+    return { language: 'html', rules: ['Emit clean, semantic HTML5 only. Keep styles in .css and scripts in .js.'] };
+  }
+  if (ext === '.css') {
+    return { language: 'css', rules: ['Emit valid CSS only with standard responsive rules and CSS variables.'] };
+  }
+  if (ext === '.json') {
+    return { language: 'json', rules: ['Emit strict JSON only. Zero comments, zero trailing commas.'] };
+  }
+  if (ext === '.md') {
+    return { language: 'markdown', rules: ['Emit standard GitHub Flavored Markdown only.'] };
+  }
+  return { language: 'unknown', rules: ['Follow standard language conventions for this file type.'] };
+}
+
 export async function buildCoderContext(
   conversationId: string,
   blueprintSection: string,
@@ -439,6 +483,25 @@ export async function buildCoderContext(
   if (uiSpec && /\.(jsx|tsx|js|html)$/.test(fileName)) {
     const compSection = extractMdSection(uiSpec, 'Components');
     if (compSection) context += `=== COMPONENT PROP CONTRACTS (USE EXACT PROP NAMES) ===\n${compSection}\n\n`;
+  }
+
+  // Inject Tech Stack and Project Goal (Architecture & Plan) — essential for package.json, configs, and main entry points
+  const archSpec = await readVirtualFile(conversationId, 'architecture.md');
+  const planSpec = await readVirtualFile(conversationId, 'plan.md');
+
+  if (planSpec) {
+    const projGoal = extractMdSection(planSpec, 'Project Goal');
+    const projName = extractMdSection(planSpec, 'Project Name');
+    if (projGoal || projName) {
+      context += `=== PROJECT IDENTITY & GOAL ===\n${projName ? `${projName}\n` : ''}${projGoal || ''}\n\n`;
+    }
+  }
+
+  if (archSpec) {
+    const techStack = extractMdSection(archSpec, 'Tech Stack');
+    if (techStack) {
+      context += `=== AUTHORITATIVE TECH STACK & DEPENDENCIES ===\n${techStack}\n\n`;
+    }
   }
 
   if (dependencyInterfaces) context += `=== DEPENDENCY INTERFACES ===\n${dependencyInterfaces}\n\n`;
@@ -562,37 +625,12 @@ export async function launchVSCodePreview(conversationId: string, onEvent: Pipel
       }
     }
 
-    if (entryFile) {
-      onEvent({
-        type: 'AGENT_LOG',
-        message: `⚡ Automatic Local Execution: Launching Node.js backend server (${entryFile})...`,
-      });
-      execFile(
-        process.execPath,
-        [entryFile],
-        { cwd: projectPath, env: sanitizedEnv, timeout: 60000, windowsHide: true },
-        (error) => {
-          if (error) {
-            onEvent({
-              type: 'AGENT_LOG',
-              message: `⚠️ Node.js Runtime Error: ${error.message}`,
-            });
-          }
-        }
-      );
-    } else if (fs.existsSync(path.join(projectPath, 'index.html'))) {
-      onEvent({
-        type: 'AGENT_LOG',
-        message: `⚡ Automatic Local Execution: Launching local web preview server (npx serve)...`,
-      });
-      const npxBin = process.platform === 'win32' ? 'npx.cmd' : 'npx';
-      execFile(
-        npxBin,
-        ['serve', '-s', '.', '-l', '8080'],
-        { cwd: projectPath, env: sanitizedEnv, timeout: 60000, windowsHide: true },
-        () => {}
-      );
-    }
+    const backend = getExecutionBackend();
+    onEvent({
+      type: 'AGENT_LOG',
+      message: `⚡ Automatic Execution (${backend.name}): Launching preview server...`,
+    });
+    await backend.launchPreview(conversationId, entryFile || undefined);
   } catch (err: any) {
     console.error('Failed to launch preview:', err);
   }
@@ -1267,10 +1305,18 @@ export async function runAgent(
     }
 
     if (!targetSection) {
-      targetSection = `### File: ${targetFile}\n- **Purpose**: Implementation of ${targetFile}\n- **Dependencies**: None\n- **Exports**: None`;
+      const archText = await readVirtualFile(conversationId, 'architecture.md');
+      const techStackSummary = archText ? extractMdSection(archText, 'Tech Stack') : '';
+      targetSection = `### File: ${targetFile}\n- **Purpose**: Configuration and build manifest for ${targetFile}\n- **Dependencies**: Grounded from Architecture Tech Stack: ${techStackSummary.replace(/\n+/g, ' ').trim() || 'Required project dependencies'}\n- **Exports**: None`;
     }
 
     const coderContext = await buildCoderContext(conversationId, targetSection, dependencyInterfaces);
+
+    onEvent({
+      type: 'AGENT_LOG',
+      agent: 'Coder',
+      message: `📥 Inflow Context for ${targetFile}: Blueprint section + tech stack dependencies (${coderContext.length.toLocaleString()} chars)`,
+    });
     const retryPrefix =
       attempt > 1
         ? `[RETRY ${attempt}/3] Your previous implementation of ${targetFile} had errors:\n${
@@ -1278,7 +1324,11 @@ export async function runAgent(
           }\nPlease fix these issues and output the complete, corrected code.\n\n`
         : '';
 
-    userContent = `${retryPrefix}TARGET FILE TO IMPLEMENT: ${targetFile}\nOutput ONLY the complete raw source code for "${targetFile}". Do NOT output markdown code fences or headers.\n\n${coderContext}${
+    const langPolicy = getTargetLanguagePolicy(targetFile);
+    const langPolicyBlock = `### Target Language Policy (${langPolicy.language.toUpperCase()})\n` +
+      langPolicy.rules.map(r => `- ${r}`).join('\n');
+
+    userContent = `${retryPrefix}TARGET FILE TO IMPLEMENT: ${targetFile}\nOutput ONLY the complete raw source code for "${targetFile}". Do NOT output markdown code fences or headers.\n\n${langPolicyBlock}\n\n${coderContext}${
       customUserContent ? `\n\n${customUserContent}` : ''
     }`;
   } else {

@@ -16,9 +16,72 @@ import {
   Activity,
   Compass,
   ArrowRight,
+  Cloud,
+  Server,
+  ExternalLink,
 } from 'lucide-react';
 
 const DOC_SECTIONS = [
+  {
+    id: 'gcp-hosting',
+    title: 'GCP Hosting & Vertex AI',
+    icon: Cloud,
+    description: 'Complete deployment guide for running AutoCoder on Google Cloud Compute Engine with Docker sandboxes and Vertex AI.',
+    badge: 'Cloud Production',
+    content: (
+      <div className="space-y-6">
+        <p className="text-sm text-slate-300 leading-relaxed">
+          AutoCoder is optimized for cloud trials on Google Cloud Platform using isolated StackBlitz-style Docker worker sandboxes and enterprise Vertex AI Gemini models.
+        </p>
+
+        <div className="border border-indigo-500/30 bg-gradient-to-br from-indigo-950/40 to-slate-900 rounded-2xl p-6 shadow-2xl space-y-4">
+          <div className="flex items-center justify-between">
+            <span className="px-2.5 py-0.5 rounded text-[10px] font-mono font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+              Interactive Guide &amp; Command Generator
+            </span>
+            <Link
+              href="/docs/gcp"
+              className="text-xs font-bold text-indigo-400 hover:text-indigo-300 flex items-center gap-1 group"
+            >
+              Open Full GCP Portal <ExternalLink className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+            </Link>
+          </div>
+
+          <div className="space-y-2">
+            <h4 className="text-sm font-bold text-white">Full GCP Compute Engine &amp; Vertex AI Setup</h4>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Includes step-by-step instructions for provisioning an <code>e2-standard-4</code> VM, configuring Application Default Credentials (ADC), deploying Docker worker sandboxes, and managing trial credits.
+            </p>
+          </div>
+
+          <div className="pt-2">
+            <Link
+              href="/docs/gcp"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs transition-colors shadow-lg shadow-indigo-500/20"
+            >
+              <Server className="w-4 h-4" /> Launch GCP Hosting Guide
+            </Link>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="border border-slate-800 bg-slate-900/40 p-4 rounded-xl space-y-2">
+            <h5 className="text-xs font-bold text-indigo-400 font-mono">1. Vertex AI with ADC</h5>
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              No API keys required. Authenticates via attached VM Service Account (<code>roles/aiplatform.user</code>) with 1M+ token context windows.
+            </p>
+          </div>
+
+          <div className="border border-slate-800 bg-slate-900/40 p-4 rounded-xl space-y-2">
+            <h5 className="text-xs font-bold text-emerald-400 font-mono">2. StackBlitz-Style Sandbox</h5>
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              Every project executes inside an isolated Docker worker (<code>autocoder-worker:latest</code>) with 2 CPUs and 2GB RAM limits.
+            </p>
+          </div>
+        </div>
+      </div>
+    ),
+  },
   {
     id: 'workspace-guide',
     title: 'Workspace Guide',
